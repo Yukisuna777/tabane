@@ -45,6 +45,25 @@ body {
   background: radial-gradient(120% 120% at 0% 0%, #16241d 0%, var(--bg) 55%);
 }
 
+/* macOS hiddenInset：上部の空き帯をドラッグ領域にしてウィンドウを動かせるようにする。
+   信号機ボタン(❌等)の並ぶ帯とちょうど重なる高さ。パネル本体(y=30以降)は覆わない。 */
+.titlebar-drag {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 30px;
+  -webkit-app-region: drag;
+  z-index: 50;
+}
+
+/* インタラクティブ要素はドラッグに吸われないよう明示的に除外（保険） */
+.title-bar,
+.terminal-host,
+.divider {
+  -webkit-app-region: no-drag;
+}
+
 /* ===== 分割 ===== */
 .split {
   display: flex;
@@ -56,8 +75,8 @@ body {
   position: relative;
   min-width: 0;
   min-height: 0;
-  flex-grow: 0;
-  flex-shrink: 0;
+  /* flex-grow は SplitView がインラインで比率指定。仕切り分を吸収できるよう縮小は許可。 */
+  flex-shrink: 1;
   overflow: clip;
 }
 
@@ -224,7 +243,7 @@ body {
 .terminal-host {
   flex: 1 1 auto;
   min-height: 0;
-  padding: 6px 4px 4px 8px;
+  padding: 6px 8px 6px 8px;
   overflow: clip;
 }
 .terminal-host .xterm {
@@ -232,4 +251,19 @@ body {
 }
 .terminal-host .xterm-viewport {
   background-color: transparent !important;
+}
+
+/* IME: 未確定文字列(.composition-view)が行末で clip の外に消える対策。
+   まず絶対配置の基準(.xterm-helpers)を全幅化して折り返しの土台を作り（幅0だと
+   pre-wrap が縦1列に潰れるため必須）、composition-view を端末右端で折り返す。
+   折り返した2行目以降が下の行に少し被るのは許容（見えなくなるよりまし）。 */
+.terminal-host .xterm .xterm-helpers {
+  left: 0;
+  right: 0;
+}
+.terminal-host .xterm .composition-view {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  /* JS が inline で 1セル分の height を書くため解除。折り返し後の行にも背景を敷く。 */
+  height: auto !important;
 }

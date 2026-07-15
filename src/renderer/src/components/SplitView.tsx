@@ -82,7 +82,9 @@ export function SplitView(props: Props): JSX.Element {
     >
       {node.children.map((child, i) => (
         <div key={child.id} style={{ display: 'contents' }}>
-          <div className="split-cell" style={{ flexBasis: `${node.sizes[i]}%` }}>
+          {/* サイズは flex-grow の「比率」で持たせる（flex-basis:0）。こうすると仕切り(divider)の
+              固定幅が先に引かれ、残りをセルが比率で分けるので合計がはみ出さない。 */}
+          <div className="split-cell" style={{ flexGrow: node.sizes[i], flexBasis: 0 }}>
             <SplitView {...props} node={child} />
           </div>
           {i < node.children.length - 1 && (

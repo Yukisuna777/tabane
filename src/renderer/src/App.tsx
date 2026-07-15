@@ -79,6 +79,7 @@ export function App(): JSX.Element {
 
   return (
     <div className="app">
+      <div className="titlebar-drag" />
       <SplitView
         node={layout}
         activePaneId={activePaneId}
