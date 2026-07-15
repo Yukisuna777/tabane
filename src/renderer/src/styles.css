@@ -84,6 +84,34 @@ body {
   -webkit-app-region: no-drag;
 }
 
+/* 背景画像レイヤ（.app の兄弟・ウィンドウ全面・最背面）。不透明度は main の設定値を inline で。
+   下地は body の不透明ダーク（--bg）なので、opacity を下げる＝暗くなる＝dim を兼ねる。 */
+.bg-layer {
+  position: fixed;
+  inset: -12px; /* blur の縁のにじみを画面外へ逃がす */
+  z-index: 0;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  filter: blur(2px); /* 細部のノイズを消して可読性を底上げ（静的1枚なので負荷ほぼ0） */
+  pointer-events: none;
+}
+.app {
+  position: relative;
+  z-index: 1; /* 背景レイヤ(z:0)より前 */
+}
+
+/* 背景画像 ON のときだけ、面を半透明化して画像を透かす（OFF時は現状維持） */
+body.bg-image-on .app {
+  background: transparent; /* 不透明 radial-gradient を解除 */
+}
+body.bg-image-on .pane {
+  background: rgba(15, 26, 42, 0.55); /* --panel のガラス化 */
+}
+body.bg-image-on .title-bar {
+  background: rgba(20, 32, 51, 0.72); /* --bg-elev の半透明化 */
+}
+
 /* ===== 分割 ===== */
 .split {
   display: flex;

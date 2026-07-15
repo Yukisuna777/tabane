@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import type {
+  BackgroundState,
   PtyCreateOptions,
   PtyDataEvent,
   PtyExitEvent,
@@ -21,7 +22,9 @@ const api: TabaneApi = {
   focusPty: (id) => ipcRenderer.send('pty:focus', id),
   onPtyData: (cb) => subscribe<PtyDataEvent>('pty:data', cb),
   onPtyExit: (cb) => subscribe<PtyExitEvent>('pty:exit', cb),
-  onPtyStatus: (cb) => subscribe<PtyStatusEvent>('pty:status', cb)
+  onPtyStatus: (cb) => subscribe<PtyStatusEvent>('pty:status', cb),
+  getBackground: () => ipcRenderer.invoke('bg:get'),
+  onBackgroundChange: (cb) => subscribe<BackgroundState>('bg:changed', cb)
 }
 
 contextBridge.exposeInMainWorld('tabane', api)

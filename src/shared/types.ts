@@ -32,6 +32,14 @@ export interface PtyStatusEvent {
   status: PaneStatus
 }
 
+/** 背景画像の表示状態。main が画像を data URI 化して renderer に渡す。 */
+export interface BackgroundState {
+  /** 表示用 data URI（未設定なら null） */
+  dataUri: string | null
+  /** 画像レイヤの不透明度 0..1 */
+  opacity: number
+}
+
 /** preload が contextBridge で renderer に公開する API */
 export interface TabaneApi {
   createPty(opts: PtyCreateOptions): Promise<string>
@@ -43,4 +51,8 @@ export interface TabaneApi {
   onPtyData(cb: (e: PtyDataEvent) => void): () => void
   onPtyExit(cb: (e: PtyExitEvent) => void): () => void
   onPtyStatus(cb: (e: PtyStatusEvent) => void): () => void
+  /** 現在の背景状態を取得（起動時に renderer から取りに来る） */
+  getBackground(): Promise<BackgroundState>
+  /** メニュー操作で背景が変わったときの通知 */
+  onBackgroundChange(cb: (s: BackgroundState) => void): () => void
 }

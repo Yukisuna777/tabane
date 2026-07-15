@@ -25,8 +25,26 @@ export interface TermSession {
 
 const sessions = new Map<string, TermSession>()
 
+// 背景色以外のテーマは固定。背景だけ「画像OFF=不透明 / 画像ON=alpha」で差し替える。
+const THEME_BASE = {
+  foreground: '#dde8ff', // 月明かりのテキスト
+  cursor: '#a9d2ff', // Ice Blue
+  selectionBackground: 'rgba(169,210,255,0.28)'
+} as const
+const OPAQUE_BG = '#0c1521'
+let terminalBg: string = OPAQUE_BG
+
 export function getSession(paneId: string): TermSession | undefined {
   return sessions.get(paneId)
+}
+
+/** 端末背景色を切り替える（画像ON時は alpha 付きにして背景画像を透かす）。
+ *  既存・新規どちらの xterm にも反映する。 */
+export function setTerminalBackground(color: string): void {
+  terminalBg = color
+  for (const session of sessions.values()) {
+    session.term.options.theme = { ...THEME_BASE, background: color }
+  }
 }
 
 interface AttachOptions {
@@ -56,12 +74,9 @@ export function attachTerminal(
     fontSize: 13,
     cursorBlink: true,
     allowProposedApi: true,
-    theme: {
-      background: '#0c1521', // Winter Night bg-base
-      foreground: '#dde8ff', // 月明かりのテキスト
-      cursor: '#a9d2ff', // Ice Blue
-      selectionBackground: 'rgba(169,210,255,0.28)'
-    }
+    // 背景画像を透かすため常に true。false だと色付きセルに黒帯が焼き込まれ破綻する（fable実機確認）。
+    allowTransparency: true,
+    theme: { ...THEME_BASE, background: terminalBg }
   })
   const fit = new FitAddon()
   term.loadAddon(fit)
