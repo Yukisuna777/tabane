@@ -5,11 +5,14 @@ import { readFileSync } from 'node:fs'
 import { PtyManager } from './ptyManager.js'
 import { readConfig, writeConfig } from './store.js'
 import { buildMenu } from './menu.js'
-import type { BackgroundState, PtyCreateOptions } from '../shared/types.js'
+import type { AppSettings, PtyCreateOptions, SettingsPatch } from '../shared/types.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
 const DEFAULT_OPACITY = 0.2
+const DEFAULT_BLUR = 2
+const DEFAULT_FONT_SIZE = 13
+const DEFAULT_THEME = 'dark' as const
 
 let mainWindow: BrowserWindow | null = null
 
@@ -20,7 +23,8 @@ function createWindow(): void {
     minWidth: 640,
     minHeight: 400,
     show: false,
-    backgroundColor: '#0c1521',
+    // 保存テーマに合わせて初期背景色を決め、起動時のちらつきを防ぐ
+    backgroundColor: (readConfig().theme ?? DEFAULT_THEME) === 'light' ? '#dde4ef' : '#0c1521',
     titleBarStyle: 'hiddenInset',
     webPreferences: {
       preload: join(__dirname, '../preload/index.cjs'),
@@ -62,12 +66,18 @@ function registerIpc(): void {
   )
   ipcMain.on('pty:kill', (_e, id: string) => ptyManager.kill(id))
   ipcMain.on('pty:focus', (_e, id: string) => ptyManager.focus(id))
-  ipcMain.handle('bg:get', () => currentBackground())
+  ipcMain.handle('settings:get', () => currentSettings())
+  ipcMain.on('settings:update', (_e, patch: SettingsPatch) => {
+    writeConfig(patch)
+    pushSettings()
+  })
+  ipcMain.on('bg:pick', () => void pickBackground())
+  ipcMain.on('bg:clear', () => clearBackground())
   ipcMain.handle('layout:get', () => readConfig().layout ?? null)
   ipcMain.on('layout:save', (_e, layout: unknown) => writeConfig({ layout }))
 }
 
-// ===== 背景画像 =====
+// ===== 設定（背景画像・フォント・テーマ・レイアウト復元） =====
 
 const MIME: Record<string, string> = {
   '.png': 'image/png',
@@ -89,16 +99,22 @@ function loadDataUri(path: string | null | undefined): string | null {
   }
 }
 
-function currentBackground(): BackgroundState {
+function currentSettings(): AppSettings {
   const cfg = readConfig()
   return {
-    dataUri: loadDataUri(cfg.backgroundImagePath),
-    opacity: cfg.backgroundOpacity ?? DEFAULT_OPACITY
+    background: {
+      dataUri: loadDataUri(cfg.backgroundImagePath),
+      opacity: cfg.backgroundOpacity ?? DEFAULT_OPACITY,
+      blur: cfg.backgroundBlur ?? DEFAULT_BLUR
+    },
+    fontSize: cfg.fontSize ?? DEFAULT_FONT_SIZE,
+    theme: cfg.theme ?? DEFAULT_THEME,
+    layoutRestore: cfg.layoutRestore ?? true
   }
 }
 
-function pushBackground(): void {
-  send('bg:changed', currentBackground())
+function pushSettings(): void {
+  send('settings:changed', currentSettings())
   refreshMenu()
 }
 
@@ -111,24 +127,23 @@ async function pickBackground(): Promise<void> {
   })
   if (res.canceled || res.filePaths.length === 0) return
   writeConfig({ backgroundImagePath: res.filePaths[0] })
-  pushBackground()
+  pushSettings()
 }
 
 function clearBackground(): void {
   writeConfig({ backgroundImagePath: null })
-  pushBackground()
-}
-
-function setOpacity(opacity: number): void {
-  writeConfig({ backgroundOpacity: opacity })
-  pushBackground()
+  pushSettings()
 }
 
 function refreshMenu(): void {
   buildMenu({
+    onOpenSettings: () => send('menu:open-settings', null),
     onPickBackground: () => void pickBackground(),
     onClearBackground: clearBackground,
-    onSetOpacity: setOpacity,
+    onSetOpacity: (opacity) => {
+      writeConfig({ backgroundOpacity: opacity })
+      pushSettings()
+    },
     currentOpacity: () => readConfig().backgroundOpacity ?? DEFAULT_OPACITY
   })
 }

@@ -3,6 +3,7 @@ import { Menu, type MenuItemConstructorOptions } from 'electron'
 export const OPACITY_PRESETS = [0.1, 0.2, 0.35, 0.5]
 
 interface MenuCallbacks {
+  onOpenSettings: () => void
   onPickBackground: () => void
   onClearBackground: () => void
   onSetOpacity: (opacity: number) => void
@@ -14,13 +15,39 @@ interface MenuCallbacks {
 export function buildMenu(cb: MenuCallbacks): void {
   const isMac = process.platform === 'darwin'
 
+  const settingsItem: MenuItemConstructorOptions = {
+    label: '設定…',
+    accelerator: 'CmdOrCtrl+,',
+    click: cb.onOpenSettings
+  }
+
   const template: MenuItemConstructorOptions[] = [
-    ...(isMac ? [{ role: 'appMenu' } as MenuItemConstructorOptions] : []),
+    ...(isMac
+      ? [
+          {
+            role: 'appMenu',
+            submenu: [
+              { role: 'about' },
+              { type: 'separator' },
+              settingsItem,
+              { type: 'separator' },
+              { role: 'services' },
+              { type: 'separator' },
+              { role: 'hide' },
+              { role: 'hideOthers' },
+              { role: 'unhide' },
+              { type: 'separator' },
+              { role: 'quit' }
+            ]
+          } as MenuItemConstructorOptions
+        ]
+      : []),
     { role: 'fileMenu' },
     { role: 'editMenu' },
     {
       label: '表示',
       submenu: [
+        ...(isMac ? [] : [settingsItem, { type: 'separator' as const }]),
         { label: '背景画像を選択…', click: cb.onPickBackground },
         { label: '背景画像をクリア', click: cb.onClearBackground },
         { type: 'separator' },

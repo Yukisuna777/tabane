@@ -7,6 +7,10 @@ import { join } from 'node:path'
 export interface TabaneConfig {
   backgroundImagePath?: string | null
   backgroundOpacity?: number
+  backgroundBlur?: number
+  fontSize?: number
+  theme?: 'light' | 'dark'
+  layoutRestore?: boolean
   /** 復元用のレイアウト木（renderer の LayoutNode を JSON 化したもの） */
   layout?: unknown
 }

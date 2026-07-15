@@ -1,10 +1,11 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import type {
-  BackgroundState,
+  AppSettings,
   PtyCreateOptions,
   PtyDataEvent,
   PtyExitEvent,
   PtyStatusEvent,
+  SettingsPatch,
   TabaneApi
 } from '../shared/types.js'
 
@@ -23,8 +24,16 @@ const api: TabaneApi = {
   onPtyData: (cb) => subscribe<PtyDataEvent>('pty:data', cb),
   onPtyExit: (cb) => subscribe<PtyExitEvent>('pty:exit', cb),
   onPtyStatus: (cb) => subscribe<PtyStatusEvent>('pty:status', cb),
-  getBackground: () => ipcRenderer.invoke('bg:get'),
-  onBackgroundChange: (cb) => subscribe<BackgroundState>('bg:changed', cb),
+  getSettings: () => ipcRenderer.invoke('settings:get'),
+  onSettingsChange: (cb) => subscribe<AppSettings>('settings:changed', cb),
+  updateSettings: (patch: SettingsPatch) => ipcRenderer.send('settings:update', patch),
+  pickBackground: () => ipcRenderer.send('bg:pick'),
+  clearBackground: () => ipcRenderer.send('bg:clear'),
+  onOpenSettings: (cb) => {
+    const listener = (): void => cb()
+    ipcRenderer.on('menu:open-settings', listener)
+    return () => ipcRenderer.removeListener('menu:open-settings', listener)
+  },
   getLayout: () => ipcRenderer.invoke('layout:get'),
   saveLayout: (layout) => ipcRenderer.send('layout:save', layout)
 }

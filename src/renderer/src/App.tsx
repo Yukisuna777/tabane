@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { BackgroundState, PaneStatus, SplitDir } from '../../shared/types'
+import type { AppSettings, PaneStatus, SplitDir } from '../../shared/types'
 import {
   closePane,
   collectPaneIds,
@@ -12,25 +12,53 @@ import {
   stripInheritCwd
 } from './layout'
 import { SplitView } from './components/SplitView'
-import { getSession, pruneTerminals, setTerminalBackground } from './terminalRegistry'
+import { SettingsModal } from './components/SettingsModal'
+import {
+  getSession,
+  pruneTerminals,
+  setTerminalFontSize,
+  setTerminalTheme
+} from './terminalRegistry'
 
 let paneCounter = 1
 
+const DEFAULT_SETTINGS: AppSettings = {
+  background: { dataUri: null, opacity: 0.2, blur: 2 },
+  fontSize: 13,
+  theme: 'dark',
+  layoutRestore: true
+}
+
 export function App(): JSX.Element {
-  // 復元前は null。getLayout() で確定してから描画する（先走って端末を1つ余計に spawn しないため）
+  // 復元前は null。設定＋レイアウトが確定してから描画する（余計な端末を spawn しないため）
   const [layout, setLayout] = useState<LayoutNode | null>(null)
   const [activePaneId, setActivePaneId] = useState<string | null>(null)
   const [statusByPty, setStatusByPty] = useState<Record<string, PaneStatus>>({})
-  const [bg, setBg] = useState<BackgroundState>({ dataUri: null, opacity: 0.2 })
+  const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS)
+  const [settingsOpen, setSettingsOpen] = useState(false)
 
-  // 起動時：保存済みレイアウトを復元（無ければ新規1ペイン）。妥当性チェック＋
-  // inheritCwdFromPtyId 剥がしを通す。
+  // 起動時：設定とレイアウトをまとめて取得。layoutRestore が ON のときだけ復元。
   useEffect(() => {
-    window.tabane.getLayout().then((saved) => {
-      const restored = isLayoutNode(saved) ? stripInheritCwd(saved) : null
+    Promise.all([window.tabane.getSettings(), window.tabane.getLayout()]).then(([s, saved]) => {
+      setSettings(s)
+      const restored = s.layoutRestore && isLayoutNode(saved) ? stripInheritCwd(saved) : null
       setLayout(restored ?? createPane('shell 1'))
     })
+    return window.tabane.onSettingsChange(setSettings)
   }, [])
+
+  // メニュー「設定…」/ cmd+, で設定モーダルを開く
+  useEffect(() => window.tabane.onOpenSettings(() => setSettingsOpen(true)), [])
+
+  // テーマを data-theme に反映
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', settings.theme)
+  }, [settings.theme])
+
+  // フォントサイズを全端末に反映
+  useEffect(() => {
+    setTerminalFontSize(settings.fontSize)
+  }, [settings.fontSize])
 
   // リサイズ（＝ドラッグ連打）だけ debounce 保存。構造変更は各ハンドラで即保存する。
   useEffect(() => {
@@ -50,18 +78,12 @@ export function App(): JSX.Element {
     return () => window.removeEventListener('beforeunload', flush)
   }, [])
 
-  // 背景画像：起動時に取得＋メニュー変更を購読
+  // 背景画像の ON/OFF と テーマで、ペイン半透明化（body クラス）と端末テーマを切り替える
   useEffect(() => {
-    window.tabane.getBackground().then(setBg)
-    return window.tabane.onBackgroundChange(setBg)
-  }, [])
-
-  // 背景画像の ON/OFF で、ペイン半透明化（body クラス）と端末背景の alpha 化を切り替える
-  useEffect(() => {
-    const on = !!bg.dataUri
+    const on = !!settings.background.dataUri
     document.body.classList.toggle('bg-image-on', on)
-    setTerminalBackground(on ? 'rgba(12,21,33,0.38)' : '#0c1521')
-  }, [bg.dataUri])
+    setTerminalTheme(settings.theme, on)
+  }, [settings.background.dataUri, settings.theme])
 
   // レイアウトが定まったら先頭ペインを active に
   useEffect(() => {
@@ -138,13 +160,16 @@ export function App(): JSX.Element {
     setLayout((prev) => (prev ? setSizes(prev, splitId, sizes) : prev))
   }, [])
 
+  const { background } = settings
+
   return (
     <>
       <div
         className="bg-layer"
         style={{
-          backgroundImage: bg.dataUri ? `url(${bg.dataUri})` : 'none',
-          opacity: bg.dataUri ? bg.opacity : 0
+          backgroundImage: background.dataUri ? `url(${background.dataUri})` : 'none',
+          opacity: background.dataUri ? background.opacity : 0,
+          filter: `blur(${background.blur}px)`
         }}
       />
       <div className="app">
@@ -162,6 +187,9 @@ export function App(): JSX.Element {
           />
         )}
       </div>
+      {settingsOpen && (
+        <SettingsModal settings={settings} onClose={() => setSettingsOpen(false)} />
+      )}
     </>
   )
 }

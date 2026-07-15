@@ -32,12 +32,34 @@ export interface PtyStatusEvent {
   status: PaneStatus
 }
 
+export type ThemeMode = 'light' | 'dark'
+
 /** 背景画像の表示状態。main が画像を data URI 化して renderer に渡す。 */
 export interface BackgroundState {
   /** 表示用 data URI（未設定なら null） */
   dataUri: string | null
   /** 画像レイヤの不透明度 0..1 */
   opacity: number
+  /** 画像レイヤの blur(px) */
+  blur: number
+}
+
+/** アプリ全体の設定（設定GUI・メニューが編集し config.json に永続化） */
+export interface AppSettings {
+  background: BackgroundState
+  fontSize: number
+  theme: ThemeMode
+  /** 起動時に前回レイアウトを復元するか */
+  layoutRestore: boolean
+}
+
+/** 設定GUI から渡すスカラー設定のパッチ */
+export interface SettingsPatch {
+  backgroundOpacity?: number
+  backgroundBlur?: number
+  fontSize?: number
+  theme?: ThemeMode
+  layoutRestore?: boolean
 }
 
 /** preload が contextBridge で renderer に公開する API */
@@ -51,10 +73,17 @@ export interface TabaneApi {
   onPtyData(cb: (e: PtyDataEvent) => void): () => void
   onPtyExit(cb: (e: PtyExitEvent) => void): () => void
   onPtyStatus(cb: (e: PtyStatusEvent) => void): () => void
-  /** 現在の背景状態を取得（起動時に renderer から取りに来る） */
-  getBackground(): Promise<BackgroundState>
-  /** メニュー操作で背景が変わったときの通知 */
-  onBackgroundChange(cb: (s: BackgroundState) => void): () => void
+  /** 現在の設定を取得（起動時に renderer から取りに来る） */
+  getSettings(): Promise<AppSettings>
+  /** メニュー/設定GUI で設定が変わったときの通知 */
+  onSettingsChange(cb: (s: AppSettings) => void): () => void
+  /** スカラー設定のパッチ更新（不透明度・blur・フォント・テーマ・復元） */
+  updateSettings(patch: SettingsPatch): void
+  /** 背景画像をファイルダイアログで選ぶ／クリアする（main 側で永続化） */
+  pickBackground(): void
+  clearBackground(): void
+  /** メニューの「設定…」で設定GUIを開く合図 */
+  onOpenSettings(cb: () => void): () => void
   /** 復元用レイアウトの取得・保存（中身は renderer の LayoutNode JSON） */
   getLayout(): Promise<unknown>
   saveLayout(layout: unknown): void

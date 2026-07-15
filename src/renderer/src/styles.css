@@ -31,6 +31,42 @@
   --waiting: #e8a83a; /* Amber warning ＝要確認（寒色の中で暖色1色が際立つ） */
   --danger: #d45555; /* brand danger */
   --divider-hover: #a9d2ff; /* Ice */
+
+  /* テーマ切替のため変数化（ダーク値は現状のハードコードと同一） */
+  --waiting-rgb: 232, 168, 58; /* Amber の RGB チャンネル */
+  --overlay-rgb: 255, 255, 255; /* hover/focus の面オーバーレイ */
+  --active-ring: rgba(169, 210, 255, 0.28);
+  --danger-hover-bg: rgba(212, 85, 85, 0.22);
+  --danger-hover-fg: #f0a5a5;
+  --glass-pane: rgba(15, 26, 42, 0.55); /* 画像ON時のペイン */
+  --glass-titlebar: rgba(20, 32, 51, 0.72); /* 画像ON時のタイトルバー */
+}
+
+/* ================================================================
+ * Snow（ライト）— yukisuna-brand tokens/color.css :root に基づく。
+ * Ice=フォーカス / Lavender=実行中 / Amber=返事待ち のセマンティクスは共通。
+ * ================================================================ */
+[data-theme='light'] {
+  --bg: #dde4ef; /* brand bg-mid＝キャンバス */
+  --bg-elev: #e6ebf3; /* brand bg-base＝タイトルバー・グラデ起点 */
+  --panel: #f1f4f8; /* brand bg-elevated＝ペイン/端末面 */
+  --border: rgba(96, 116, 156, 0.3);
+  --border-active: #78aadd; /* ライトで見える Ice */
+  --text: #26324a; /* brand text-primary */
+  --text-dim: #66738e; /* brand text-secondary */
+  --accent: #3f638f; /* 文字/カーソルに安全な Ice */
+  --busy: #5b45a0; /* Lavender text（6.4:1） */
+  --waiting: #b5791b; /* Amber を光背景用に暗調整 */
+  --danger: #e06060;
+  --divider-hover: #78aadd;
+
+  --waiting-rgb: 181, 121, 27;
+  --overlay-rgb: 38, 50, 72; /* 白オーバーレイの反転 */
+  --active-ring: rgba(117, 154, 198, 0.45);
+  --danger-hover-bg: rgba(224, 96, 96, 0.16);
+  --danger-hover-fg: #a03c3c;
+  --glass-pane: rgba(246, 248, 252, 0.58); /* 白ガラス */
+  --glass-titlebar: rgba(230, 235, 243, 0.8);
 }
 
 * {
@@ -62,7 +98,7 @@ body {
   padding: 6px;
   /* macOS hiddenInset のタイトルバー分だけ上を空ける */
   padding-top: 30px;
-  background: radial-gradient(120% 120% at 0% 0%, #142033 0%, var(--bg) 55%);
+  background: radial-gradient(120% 120% at 0% 0%, var(--bg-elev) 0%, var(--bg) 55%);
 }
 
 /* macOS hiddenInset：上部の空き帯をドラッグ領域にしてウィンドウを動かせるようにする。
@@ -93,7 +129,7 @@ body {
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
-  filter: blur(2px); /* 細部のノイズを消して可読性を底上げ（静的1枚なので負荷ほぼ0） */
+  /* blur は設定値を inline style で当てる（可読性の底上げ） */
   pointer-events: none;
 }
 .app {
@@ -106,10 +142,10 @@ body.bg-image-on .app {
   background: transparent; /* 不透明 radial-gradient を解除 */
 }
 body.bg-image-on .pane {
-  background: rgba(15, 26, 42, 0.55); /* --panel のガラス化 */
+  background: var(--glass-pane);
 }
 body.bg-image-on .title-bar {
-  background: rgba(20, 32, 51, 0.72); /* --bg-elev の半透明化 */
+  background: var(--glass-titlebar);
 }
 
 /* ===== 分割 ===== */
@@ -178,7 +214,7 @@ body.bg-image-on .title-bar {
 
 .pane.active {
   border-color: var(--border-active);
-  box-shadow: 0 0 0 1px rgba(169, 210, 255, 0.28);
+  box-shadow: 0 0 0 1px var(--active-ring);
 }
 
 /* 返事待ちの発光 */
@@ -190,13 +226,13 @@ body.bg-image-on .title-bar {
   0%,
   100% {
     box-shadow:
-      0 0 0 1px rgba(232, 168, 58, 0.4),
-      0 0 14px rgba(232, 168, 58, 0.25);
+      0 0 0 1px rgba(var(--waiting-rgb), 0.4),
+      0 0 14px rgba(var(--waiting-rgb), 0.25);
   }
   50% {
     box-shadow:
-      0 0 0 1px rgba(232, 168, 58, 0.85),
-      0 0 26px rgba(232, 168, 58, 0.5);
+      0 0 0 1px rgba(var(--waiting-rgb), 0.85),
+      0 0 26px rgba(var(--waiting-rgb), 0.5);
   }
 }
 
@@ -213,7 +249,7 @@ body.bg-image-on .title-bar {
   user-select: none;
 }
 .title-bar.status-waiting {
-  background: linear-gradient(90deg, rgba(232, 168, 58, 0.18), var(--bg-elev) 60%);
+  background: linear-gradient(90deg, rgba(var(--waiting-rgb), 0.18), var(--bg-elev) 60%);
 }
 
 .status-dot {
@@ -254,7 +290,7 @@ body.bg-image-on .title-bar {
   color: var(--text-dim);
 }
 .title-input:focus {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(var(--overlay-rgb), 0.05);
 }
 
 .title-actions {
@@ -279,12 +315,12 @@ body.bg-image-on .title-bar {
   border-radius: 5px;
 }
 .title-actions button:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(var(--overlay-rgb), 0.08);
   color: var(--text);
 }
 .title-actions button.close:hover {
-  background: rgba(212, 85, 85, 0.22);
-  color: #f0a5a5;
+  background: var(--danger-hover-bg);
+  color: var(--danger-hover-fg);
 }
 
 /* ===== 端末 ===== */
@@ -314,4 +350,175 @@ body.bg-image-on .title-bar {
   overflow-wrap: anywhere;
   /* JS が inline で 1セル分の height を書くため解除。折り返し後の行にも背景を敷く。 */
   height: auto !important;
+}
+
+/* ===== 設定モーダル ===== */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(4, 8, 14, 0.5);
+  backdrop-filter: blur(3px);
+}
+.modal {
+  width: min(440px, 92vw);
+  max-height: 86vh;
+  overflow-y: auto;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.5);
+  padding: 4px 20px 20px;
+}
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 0 10px;
+  position: sticky;
+  top: 0;
+  background: var(--bg-elev);
+}
+.modal-head h2 {
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: var(--text);
+}
+.modal-close {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 4px 7px;
+  border-radius: 6px;
+}
+.modal-close:hover {
+  background: rgba(128, 128, 128, 0.15);
+  color: var(--text);
+}
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 11px 0;
+}
+.setting-row.sub {
+  padding: 5px 0 5px 14px;
+}
+.setting-row > label {
+  font-size: 13px;
+  color: var(--text);
+  font-weight: 600;
+}
+.setting-row.sub > label {
+  color: var(--text-dim);
+  font-weight: 500;
+}
+.setting-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 6px 0;
+}
+
+/* セグメント（テーマ切替） */
+.segmented {
+  display: inline-flex;
+  background: rgba(128, 128, 128, 0.14);
+  border-radius: 8px;
+  padding: 2px;
+}
+.segmented button {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 5px 14px;
+  border-radius: 6px;
+}
+.segmented button.active {
+  background: var(--accent);
+  color: var(--bg);
+}
+
+/* スライダー */
+.slider-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.slider-group input[type='range'] {
+  width: 150px;
+  accent-color: var(--accent);
+}
+.slider-group input[type='range']:disabled {
+  opacity: 0.4;
+}
+.slider-val {
+  font-size: 12px;
+  color: var(--text-dim);
+  min-width: 38px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* トグル */
+.toggle {
+  width: 42px;
+  height: 24px;
+  border-radius: 999px;
+  border: none;
+  background: rgba(128, 128, 128, 0.3);
+  cursor: pointer;
+  position: relative;
+  transition: background 0.15s ease;
+}
+.toggle.on {
+  background: var(--accent);
+}
+.toggle .knob {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.15s ease;
+}
+.toggle.on .knob {
+  transform: translateX(18px);
+}
+
+/* 背景画像アクション */
+.bg-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.bg-actions button {
+  background: rgba(128, 128, 128, 0.15);
+  border: 1px solid var(--border);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 5px 12px;
+  border-radius: 7px;
+}
+.bg-actions button:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+.bg-actions button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.bg-status {
+  font-size: 11px;
+  color: var(--text-dim);
 }

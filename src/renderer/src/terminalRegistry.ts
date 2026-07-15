@@ -25,25 +25,71 @@ export interface TermSession {
 
 const sessions = new Map<string, TermSession>()
 
-// 背景色以外のテーマは固定。背景だけ「画像OFF=不透明 / 画像ON=alpha」で差し替える。
-const THEME_BASE = {
-  foreground: '#dde8ff', // 月明かりのテキスト
-  cursor: '#a9d2ff', // Ice Blue
-  selectionBackground: 'rgba(169,210,255,0.28)'
+// テーマ×背景画像ON/OFF で端末テーマを組み立てる（fable 設計・brand 由来の値）。
+const THEME_BASES = {
+  dark: {
+    foreground: '#dde8ff', // 月明かりのテキスト
+    cursor: '#a9d2ff', // Ice Blue
+    selectionBackground: 'rgba(169,210,255,0.28)'
+  },
+  light: {
+    foreground: '#26324a', // brand text-primary
+    cursor: '#3f638f', // ライトで見える Ice（原色は薄すぎ）
+    selectionBackground: 'rgba(117,154,198,0.30)'
+  }
 } as const
-const OPAQUE_BG = '#0c1521'
-let terminalBg: string = OPAQUE_BG
+const TERMINAL_BG = {
+  dark: { opaque: '#0c1521', glass: 'rgba(12,21,33,0.38)' },
+  light: { opaque: '#f1f4f8', glass: 'rgba(246,248,252,0.45)' }
+} as const
+// ライトでは ANSI の黄/白がほぼ見えないので最低限だけ暗く上書き
+const LIGHT_ANSI = {
+  yellow: '#9a6a10',
+  brightYellow: '#b5791b',
+  white: '#8a94a8',
+  brightWhite: '#5c6680'
+} as const
+
+type ThemeMode = 'light' | 'dark'
+let currentTheme: ThemeMode = 'dark'
+let currentImageOn = false
+let terminalFontSize = 13
+
+function computeTheme(): Record<string, string> {
+  const base = THEME_BASES[currentTheme]
+  const background = TERMINAL_BG[currentTheme][currentImageOn ? 'glass' : 'opaque']
+  const ansi = currentTheme === 'light' ? LIGHT_ANSI : {}
+  return { ...base, ...ansi, background }
+}
 
 export function getSession(paneId: string): TermSession | undefined {
   return sessions.get(paneId)
 }
 
-/** 端末背景色を切り替える（画像ON時は alpha 付きにして背景画像を透かす）。
- *  既存・新規どちらの xterm にも反映する。 */
-export function setTerminalBackground(color: string): void {
-  terminalBg = color
+/** 端末のフォントサイズを全ペインに反映して再フィットする。 */
+export function setTerminalFontSize(size: number): void {
+  terminalFontSize = size
   for (const session of sessions.values()) {
-    session.term.options.theme = { ...THEME_BASE, background: color }
+    session.term.options.fontSize = size
+    try {
+      session.fit.fit()
+    } catch {
+      // サイズ未確定時は無視
+    }
+    if (session.ptyId) {
+      window.tabane.resizePty(session.ptyId, session.term.cols, session.term.rows)
+    }
+  }
+}
+
+/** テーマ（ライト/ダーク）と背景画像ON/OFF を端末全体に反映する。
+ *  画像ON時は背景を alpha にして背景画像を透かす。既存・新規どちらにも効く。 */
+export function setTerminalTheme(theme: ThemeMode, imageOn: boolean): void {
+  currentTheme = theme
+  currentImageOn = imageOn
+  const t = computeTheme()
+  for (const session of sessions.values()) {
+    session.term.options.theme = t
   }
 }
 
@@ -71,12 +117,12 @@ export function attachTerminal(
 
   const term = new Xterm({
     fontFamily: '"HackGen Console NF", "MesloLGS NF", Menlo, monospace',
-    fontSize: 13,
+    fontSize: terminalFontSize,
     cursorBlink: true,
     allowProposedApi: true,
     // 背景画像を透かすため常に true。false だと色付きセルに黒帯が焼き込まれ破綻する（fable実機確認）。
     allowTransparency: true,
-    theme: { ...THEME_BASE, background: terminalBg }
+    theme: computeTheme()
   })
   const fit = new FitAddon()
   term.loadAddon(fit)
