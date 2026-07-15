@@ -24,7 +24,9 @@ body,
 #root {
   height: 100%;
   width: 100%;
-  overflow: hidden;
+  /* clip はスクロールコンテナを作らない。IME 変換中のキャレット追従スクロールで
+     ペインが横ずれするのを鎖ごと物理的に止める（hidden だとスクロール可能扱いになる）。 */
+  overflow: clip;
 }
 
 body {
@@ -56,7 +58,7 @@ body {
   min-height: 0;
   flex-grow: 0;
   flex-shrink: 0;
-  overflow: hidden;
+  overflow: clip;
 }
 
 .divider {
@@ -101,7 +103,7 @@ body {
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 10px;
-  overflow: hidden;
+  overflow: clip;
   transition:
     border-color 0.15s ease,
     box-shadow 0.2s ease;
@@ -223,7 +225,7 @@ body {
   flex: 1 1 auto;
   min-height: 0;
   padding: 6px 4px 4px 8px;
-  overflow: hidden;
+  overflow: clip;
 }
 .terminal-host .xterm {
   height: 100%;

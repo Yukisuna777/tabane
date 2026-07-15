@@ -3,12 +3,15 @@ import { spawn, type IPty } from 'node-pty'
 import type { PaneStatus, PtyCreateOptions } from '../shared/types.js'
 
 /**
- * 返事待ち検知のしきい値（すべて仮。実運用でチューニングする）。
- * - QUIET_MS: 出力が止まってからこの時間 waiting とみなす（補助シグナル）
- * - BELL_SETTLE_MS: BEL/通知シーケンスを受けてから、追い出力が無ければ即 waiting にするまでの待ち
+ * 返事待ち検知のしきい値（仮。実運用でチューニングする）。
+ * - BELL_SETTLE_MS: BEL/通知シーケンスを受けてから、追い出力が無ければ waiting にするまでの待ち
+ * - IDLE_AFTER_MS: 出力が止まってから busy を解いて idle に戻すまでの待ち
+ *
+ * 方針：glow（waiting）は BEL/通知シグナルだけを根拠にする。出力静止は「暇なシェル」でも
+ * 起きるため waiting の根拠にしない（idle に戻すだけ）。これで誤発光を断つ。
  */
-const QUIET_MS = 5000
 const BELL_SETTLE_MS = 400
+const IDLE_AFTER_MS = 800
 
 /** 端末の注意喚起シグナル。BEL と主要なデスクトップ通知系 OSC。 */
 function hasAttentionSignal(data: string): boolean {
@@ -25,7 +28,7 @@ interface Session {
   pty: IPty
   status: PaneStatus
   bellPending: boolean
-  quietTimer: NodeJS.Timeout | null
+  idleTimer: NodeJS.Timeout | null
   bellTimer: NodeJS.Timeout | null
 }
 
@@ -59,7 +62,7 @@ export class PtyManager {
       pty,
       status: 'idle',
       bellPending: false,
-      quietTimer: null,
+      idleTimer: null,
       bellTimer: null
     }
     this.sessions.set(id, session)
@@ -78,24 +81,24 @@ export class PtyManager {
     return id
   }
 
-  /** PTY 出力を受けたときの状態遷移。busy にし、静止/BEL タイマーを仕込む。 */
+  /** PTY 出力を受けたときの状態遷移。出力中は busy、止まれば idle。glow は BEL のみ。 */
   private handleActivity(session: Session, data: string): void {
-    this.setStatus(session, 'busy')
     this.clearTimers(session)
+    this.setStatus(session, 'busy')
 
     if (hasAttentionSignal(data)) {
       session.bellPending = true
-      // 追い出力が無ければ即 waiting（エージェントが明示的に通知した合図）
+      // 追い出力が無ければ waiting（エージェントが明示的に通知した合図）
       session.bellTimer = setTimeout(() => {
         this.setStatus(session, 'waiting')
       }, BELL_SETTLE_MS)
       return
     }
 
-    // 補助シグナル：一定時間出力が止まったら waiting とみなす
-    session.quietTimer = setTimeout(() => {
-      this.setStatus(session, 'waiting')
-    }, QUIET_MS)
+    // 出力が止まったら idle に戻すだけ（暇なシェルを waiting にしない）
+    session.idleTimer = setTimeout(() => {
+      this.setStatus(session, 'idle')
+    }, IDLE_AFTER_MS)
   }
 
   write(id: string, data: string): void {
@@ -150,9 +153,9 @@ export class PtyManager {
   }
 
   private clearTimers(session: Session): void {
-    if (session.quietTimer) {
-      clearTimeout(session.quietTimer)
-      session.quietTimer = null
+    if (session.idleTimer) {
+      clearTimeout(session.idleTimer)
+      session.idleTimer = null
     }
     if (session.bellTimer) {
       clearTimeout(session.bellTimer)
