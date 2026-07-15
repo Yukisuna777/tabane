@@ -1,16 +1,36 @@
+/* 同梱フォント: HackGen Console NF（半角:全角=1:2 の等幅日本語 Nerd Font）。
+   SIL OFL 1.1 / ライセンスは assets/fonts/LICENSE.txt。端末の全角・罫線・
+   Nerd Font アイコンをセルグリッドに揃え、IME 未確定文字の見た目も締める。 */
+@font-face {
+  font-family: 'HackGen Console NF';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./assets/fonts/HackGenConsoleNF-Regular.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'HackGen Console NF';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('./assets/fonts/HackGenConsoleNF-Bold.woff2') format('woff2');
+}
+
 :root {
-  /* MVP は暫定色。v2 で yukisuna-brand トークンに差し替える前提の CSS 変数。 */
-  --bg: #0e1512;
-  --bg-elev: #14201b;
-  --panel: #101a16;
-  --border: #23332c;
-  --border-active: #3ddc97;
-  --text: #d7e4dd;
-  --text-dim: #7f938a;
-  --accent: #3ddc97;
-  --busy: #4aa3ff;
-  --waiting: #ffb020;
-  --divider-hover: #3ddc97;
+  /* yukisuna-brand の Winter Night（ダーク）＋キャラクター5色に基づく配色。
+     出典: yukisuna-brand/tokens/color.css [data-theme="dark"] と brand.css。 */
+  --bg: #0c1521; /* Winter Night bg-base（雪原の夜） */
+  --bg-elev: #142033; /* bg-elevated */
+  --panel: #0f1a2a; /* bg-mid */
+  --border: #1c2a3e; /* 深いネイビーの境界 */
+  --border-active: #a9d2ff; /* Ice Blue（マフラー）＝フォーカス */
+  --text: #dde8ff; /* 月明かりのテキスト */
+  --text-dim: #6f86ad; /* muted */
+  --accent: #a9d2ff; /* Ice Blue 主役 */
+  --busy: #d8cbff; /* Lavender（パーカー）＝実行中 */
+  --waiting: #e8a83a; /* Amber warning ＝要確認（寒色の中で暖色1色が際立つ） */
+  --danger: #d45555; /* brand danger */
+  --divider-hover: #a9d2ff; /* Ice */
 }
 
 * {
@@ -42,7 +62,7 @@ body {
   padding: 6px;
   /* macOS hiddenInset のタイトルバー分だけ上を空ける */
   padding-top: 30px;
-  background: radial-gradient(120% 120% at 0% 0%, #16241d 0%, var(--bg) 55%);
+  background: radial-gradient(120% 120% at 0% 0%, #142033 0%, var(--bg) 55%);
 }
 
 /* macOS hiddenInset：上部の空き帯をドラッグ領域にしてウィンドウを動かせるようにする。
@@ -130,7 +150,7 @@ body {
 
 .pane.active {
   border-color: var(--border-active);
-  box-shadow: 0 0 0 1px rgba(61, 220, 151, 0.25);
+  box-shadow: 0 0 0 1px rgba(169, 210, 255, 0.28);
 }
 
 /* 返事待ちの発光 */
@@ -142,13 +162,13 @@ body {
   0%,
   100% {
     box-shadow:
-      0 0 0 1px rgba(255, 176, 32, 0.4),
-      0 0 14px rgba(255, 176, 32, 0.25);
+      0 0 0 1px rgba(232, 168, 58, 0.4),
+      0 0 14px rgba(232, 168, 58, 0.25);
   }
   50% {
     box-shadow:
-      0 0 0 1px rgba(255, 176, 32, 0.8),
-      0 0 26px rgba(255, 176, 32, 0.5);
+      0 0 0 1px rgba(232, 168, 58, 0.85),
+      0 0 26px rgba(232, 168, 58, 0.5);
   }
 }
 
@@ -165,7 +185,7 @@ body {
   user-select: none;
 }
 .title-bar.status-waiting {
-  background: linear-gradient(90deg, rgba(255, 176, 32, 0.18), var(--bg-elev) 60%);
+  background: linear-gradient(90deg, rgba(232, 168, 58, 0.18), var(--bg-elev) 60%);
 }
 
 .status-dot {
@@ -235,8 +255,8 @@ body {
   color: var(--text);
 }
 .title-actions button.close:hover {
-  background: rgba(255, 80, 100, 0.2);
-  color: #ff8095;
+  background: rgba(212, 85, 85, 0.22);
+  color: #f0a5a5;
 }
 
 /* ===== 端末 ===== */

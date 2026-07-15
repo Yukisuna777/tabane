@@ -57,10 +57,10 @@ export function attachTerminal(
     cursorBlink: true,
     allowProposedApi: true,
     theme: {
-      background: '#0e1512',
-      foreground: '#d7e4dd',
-      cursor: '#3ddc97',
-      selectionBackground: 'rgba(61,220,151,0.28)'
+      background: '#0c1521', // Winter Night bg-base
+      foreground: '#dde8ff', // 月明かりのテキスト
+      cursor: '#a9d2ff', // Ice Blue
+      selectionBackground: 'rgba(169,210,255,0.28)'
     }
   })
   const fit = new FitAddon()
