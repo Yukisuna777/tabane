@@ -1,103 +1,62 @@
 import { useEffect, useRef } from 'react'
-import { Terminal as Xterm } from '@xterm/xterm'
-import { FitAddon } from '@xterm/addon-fit'
-import { WebglAddon } from '@xterm/addon-webgl'
+import { attachTerminal, detachTerminal, getSession } from '../terminalRegistry'
 
 interface Props {
+  paneId: string
   active: boolean
+  /** 分割元シェルの cwd を継ぐための元 PTY id（初回ペインは無し） */
+  inheritCwdFromPtyId?: string
   /** PTY が生成できたら親に通知（status 紐付け・focus 用） */
   onReady: (ptyId: string) => void
   onActivate: () => void
 }
 
-export function TerminalView({ active, onReady, onActivate }: Props): JSX.Element {
+export function TerminalView({
+  paneId,
+  active,
+  inheritCwdFromPtyId,
+  onReady,
+  onActivate
+}: Props): JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null)
-  const termRef = useRef<Xterm | null>(null)
-  const ptyIdRef = useRef<string | null>(null)
 
   useEffect(() => {
     const container = containerRef.current
     if (!container) return
 
-    const term = new Xterm({
-      fontFamily: '"HackGen Console NF", "MesloLGS NF", Menlo, monospace',
-      fontSize: 13,
-      cursorBlink: true,
-      allowProposedApi: true,
-      theme: {
-        background: '#0e1512',
-        foreground: '#d7e4dd',
-        cursor: '#3ddc97',
-        selectionBackground: 'rgba(61,220,151,0.28)'
-      }
+    // 永続レジストリに端末を付ける（無ければ生成、あれば DOM を移すだけ）。
+    // remount で PTY/xterm は死なない ＝ 分割元シェルがリセットされない。
+    const session = attachTerminal(paneId, container, { inheritCwdFromPtyId })
+
+    let cancelled = false
+    session.readyPromise.then((id) => {
+      if (!cancelled) onReady(id)
     })
-    termRef.current = term
-
-    const fit = new FitAddon()
-    term.loadAddon(fit)
-    term.open(container)
-    try {
-      term.loadAddon(new WebglAddon())
-    } catch {
-      // WebGL 不可の環境では canvas レンダラにフォールバック
-    }
-    try {
-      fit.fit()
-    } catch {
-      // 初回サイズ未確定時は握りつぶす
-    }
-
-    let disposed = false
-    let offData: (() => void) | null = null
-
-    window.tabane
-      .createPty({ cols: term.cols || 80, rows: term.rows || 24 })
-      .then((id) => {
-        if (disposed) {
-          window.tabane.killPty(id)
-          return
-        }
-        ptyIdRef.current = id
-        onReady(id)
-        offData = window.tabane.onPtyData((e) => {
-          if (e.id === id) term.write(e.data)
-        })
-        term.onData((d) => window.tabane.writePty(id, d))
-      })
 
     const ro = new ResizeObserver(() => {
       try {
-        fit.fit()
+        session.fit.fit()
       } catch {
         return
       }
-      if (ptyIdRef.current) {
-        window.tabane.resizePty(ptyIdRef.current, term.cols, term.rows)
+      if (session.ptyId) {
+        window.tabane.resizePty(session.ptyId, session.term.cols, session.term.rows)
       }
     })
     ro.observe(container)
 
     return () => {
-      disposed = true
+      cancelled = true
       ro.disconnect()
-      offData?.()
-      if (ptyIdRef.current) window.tabane.killPty(ptyIdRef.current)
-      term.dispose()
-      termRef.current = null
+      detachTerminal(paneId) // 外すだけ。破棄は App の prune が担う。
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [paneId])
 
   // active になったら xterm にフォーカスを移す
   useEffect(() => {
-    if (active) termRef.current?.focus()
-  }, [active])
+    if (active) getSession(paneId)?.term.focus()
+  }, [active, paneId])
 
-  return (
-    <div
-      ref={containerRef}
-      className="terminal-host"
-      onMouseDown={onActivate}
-    />
-  )
+  return <div ref={containerRef} className="terminal-host" onMouseDown={onActivate} />
 }

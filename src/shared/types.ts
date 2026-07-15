@@ -8,6 +8,8 @@ export type SplitDir = 'row' | 'col'
 
 export interface PtyCreateOptions {
   cwd?: string
+  /** 明示 cwd が無いとき、この PTY の現在ディレクトリを継いで起動する（分割時のcwd継承）。 */
+  inheritCwdFromPtyId?: string
   cols: number
   rows: number
 }

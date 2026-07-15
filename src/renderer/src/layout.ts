@@ -9,6 +9,8 @@ export interface PaneNode {
   kind: 'pane'
   id: string
   title: string
+  /** このペイン生成時、分割元シェルの cwd を継ぐための元 PTY id（初回ペインは無し）。 */
+  inheritCwdFromPtyId?: string
 }
 
 export interface SplitNode {
@@ -24,8 +26,8 @@ export type LayoutNode = PaneNode | SplitNode
 
 const uid = (): string => crypto.randomUUID()
 
-export function createPane(title: string): PaneNode {
-  return { kind: 'pane', id: uid(), title }
+export function createPane(title: string, inheritCwdFromPtyId?: string): PaneNode {
+  return { kind: 'pane', id: uid(), title, inheritCwdFromPtyId }
 }
 
 /** 対象ペインを、その場で [元ペイン, 新ペイン] の分割に置き換える。 */
@@ -33,11 +35,12 @@ export function splitPane(
   node: LayoutNode,
   targetPaneId: string,
   dir: SplitDir,
-  newTitle: string
+  newTitle: string,
+  inheritCwdFromPtyId?: string
 ): LayoutNode {
   if (node.kind === 'pane') {
     if (node.id !== targetPaneId) return node
-    const fresh = createPane(newTitle)
+    const fresh = createPane(newTitle, inheritCwdFromPtyId)
     return {
       kind: 'split',
       id: uid(),
@@ -48,7 +51,9 @@ export function splitPane(
   }
   return {
     ...node,
-    children: node.children.map((c) => splitPane(c, targetPaneId, dir, newTitle))
+    children: node.children.map((c) =>
+      splitPane(c, targetPaneId, dir, newTitle, inheritCwdFromPtyId)
+    )
   }
 }
 

@@ -10,6 +10,7 @@ import {
   splitPane
 } from './layout'
 import { SplitView } from './components/SplitView'
+import { getSession, pruneTerminals } from './terminalRegistry'
 
 let paneCounter = 1
 
@@ -44,10 +45,18 @@ export function App(): JSX.Element {
     }
   }, [])
 
+  // layout から消えた（＝閉じた）ペインの端末だけを本当に破棄する。
+  // remount では detach するだけなので、分割・リサイズでは PTY は死なない。
+  useEffect(() => {
+    pruneTerminals(new Set(collectPaneIds(layout)))
+  }, [layout])
+
   const handleSplit = useCallback((paneId: string, dir: SplitDir) => {
     paneCounter += 1
     const title = `shell ${paneCounter}`
-    setLayout((prev) => splitPane(prev, paneId, dir, title))
+    // 分割元シェルの cwd を新ペインに継がせる（元 PTY id を渡す）
+    const srcPtyId = getSession(paneId)?.ptyId ?? undefined
+    setLayout((prev) => splitPane(prev, paneId, dir, title, srcPtyId))
   }, [])
 
   const handleClose = useCallback((paneId: string) => {

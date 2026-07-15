@@ -1,6 +1,29 @@
 import os from 'node:os'
+import { existsSync } from 'node:fs'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
 import { spawn, type IPty } from 'node-pty'
 import type { PaneStatus, PtyCreateOptions } from '../shared/types.js'
+
+const execFileAsync = promisify(execFile)
+
+/** 実行中シェル(pid)のカレントディレクトリを lsof で引く。取れなければ undefined。 */
+async function getCwdOfPid(pid: number): Promise<string | undefined> {
+  try {
+    const { stdout } = await execFileAsync(
+      '/usr/sbin/lsof',
+      ['-a', '-p', String(pid), '-d', 'cwd', '-Fn'],
+      { timeout: 1000 }
+    )
+    // 出力は `p<pid>` / `fcwd` / `n<path>` の行。n 行の中身が cwd。
+    for (const line of stdout.split('\n')) {
+      if (line.startsWith('n')) return line.slice(1)
+    }
+  } catch {
+    // lsof 不在・タイムアウト等は継承をあきらめる
+  }
+  return undefined
+}
 
 /**
  * 返事待ち検知のしきい値（仮。実運用でチューニングする）。
@@ -44,16 +67,26 @@ export class PtyManager {
     private onStatus: StatusListener
   ) {}
 
-  create(opts: PtyCreateOptions): string {
+  async create(opts: PtyCreateOptions): Promise<string> {
     const id = `pty-${++this.seq}`
     const shell = process.env.SHELL || '/bin/zsh'
+
+    // 分割時の cwd 継承：明示 cwd が無ければ、元 PTY(シェル)の現在ディレクトリを引く。
+    let cwd = opts.cwd
+    if (!cwd && opts.inheritCwdFromPtyId) {
+      const src = this.sessions.get(opts.inheritCwdFromPtyId)
+      if (src) cwd = await getCwdOfPid(src.pty.pid)
+    }
+    // 消えたディレクトリを cwd にすると spawn が失敗するため存在チェックしてフォールバック
+    if (cwd && !existsSync(cwd)) cwd = undefined
+
     // ログインシェル（-l）で起動する。Finder/Dock 起動時の Electron は PATH が最小構成のため、
     // これが無いと claude / codex を bare name で spawn できない（tabane の目的そのもの）。
     const pty = spawn(shell, ['-l'], {
       name: 'xterm-256color',
       cols: Math.max(2, opts.cols),
       rows: Math.max(2, opts.rows),
-      cwd: opts.cwd || os.homedir(),
+      cwd: cwd || os.homedir(),
       env: { ...process.env, TERM: 'xterm-256color' }
     })
 
