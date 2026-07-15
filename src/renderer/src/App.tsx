@@ -78,12 +78,15 @@ export function App(): JSX.Element {
     return () => window.removeEventListener('beforeunload', flush)
   }, [])
 
-  // 背景画像の ON/OFF と テーマで、ペイン半透明化（body クラス）と端末テーマを切り替える
+  // 背景画像の ON/OFF でペイン半透明化（body クラス）、テーマで端末テーマを切り替える
   useEffect(() => {
     const on = !!settings.background.dataUri
     document.body.classList.toggle('bg-image-on', on)
-    setTerminalTheme(settings.theme, on)
-  }, [settings.background.dataUri, settings.theme])
+  }, [settings.background.dataUri])
+
+  useEffect(() => {
+    setTerminalTheme(settings.theme)
+  }, [settings.theme])
 
   // レイアウトが定まったら先頭ペインを active に
   useEffect(() => {

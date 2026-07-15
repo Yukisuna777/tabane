@@ -38,10 +38,6 @@ const THEME_BASES = {
     selectionBackground: 'rgba(117,154,198,0.30)'
   }
 } as const
-const TERMINAL_BG = {
-  dark: { opaque: '#0c1521', glass: 'rgba(12,21,33,0.38)' },
-  light: { opaque: '#f1f4f8', glass: 'rgba(246,248,252,0.45)' }
-} as const
 // ライトでは ANSI の黄/白がほぼ見えないので最低限だけ暗く上書き
 const LIGHT_ANSI = {
   yellow: '#9a6a10',
@@ -52,14 +48,14 @@ const LIGHT_ANSI = {
 
 type ThemeMode = 'light' | 'dark'
 let currentTheme: ThemeMode = 'dark'
-let currentImageOn = false
 let terminalFontSize = 13
 
 function computeTheme(): Record<string, string> {
   const base = THEME_BASES[currentTheme]
-  const background = TERMINAL_BG[currentTheme][currentImageOn ? 'glass' : 'opaque']
   const ansi = currentTheme === 'light' ? LIGHT_ANSI : {}
-  return { ...base, ...ansi, background }
+  // 端末背景は常に透明。下のペイン面(--panel / 画像ON時は --glass-pane)を透かして
+  // 「入力エリア(端末)」と「ペインの縁」を同一色にする（画像の透け具合も揃う）。
+  return { ...base, ...ansi, background: 'rgba(0,0,0,0)' }
 }
 
 export function getSession(paneId: string): TermSession | undefined {
@@ -82,11 +78,9 @@ export function setTerminalFontSize(size: number): void {
   }
 }
 
-/** テーマ（ライト/ダーク）と背景画像ON/OFF を端末全体に反映する。
- *  画像ON時は背景を alpha にして背景画像を透かす。既存・新規どちらにも効く。 */
-export function setTerminalTheme(theme: ThemeMode, imageOn: boolean): void {
+/** テーマ（ライト/ダーク）を端末全体に反映する（背景は常に透明でペイン面を透かす）。 */
+export function setTerminalTheme(theme: ThemeMode): void {
   currentTheme = theme
-  currentImageOn = imageOn
   const t = computeTheme()
   for (const session of sessions.values()) {
     session.term.options.theme = t

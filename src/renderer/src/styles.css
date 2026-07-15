@@ -65,8 +65,8 @@
   --active-ring: rgba(117, 154, 198, 0.45);
   --danger-hover-bg: rgba(224, 96, 96, 0.16);
   --danger-hover-fg: #a03c3c;
-  --glass-pane: rgba(246, 248, 252, 0.58); /* 白ガラス */
-  --glass-titlebar: rgba(230, 235, 243, 0.8);
+  --glass-pane: rgba(246, 248, 252, 0.55); /* 白ガラス（alpha はダークと揃える） */
+  --glass-titlebar: rgba(230, 235, 243, 0.72);
 }
 
 * {
