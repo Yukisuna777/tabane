@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<!--
+  Tabane MVP 仕様書（yukisuna-brand/flow/templates/spec.html 派生）
+  原則：実装に入る前に承認する。承認まで実装は始めない（仕様 = 人間と AI の契約書）。
+-->
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>仕様書 — Tabane MVP</title>
+<style>
+  :root{
+    --ink:#1f2a26; --muted:#5b6b64; --bg:#f4f8f6; --card:#fff;
+    --accent:#0f9d6b; --accent-deep:#0a7350; --accent-bg:#e6f5ee;
+    --do-bg:#e6f5ee; --do:#0a7350; --dont-bg:#fdeaef; --dont:#be123c;
+    --shadow:0 2px 10px rgba(15,60,45,.08),0 1px 3px rgba(15,60,45,.06);
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{font-family:"Hiragino Sans","Noto Sans JP","Yu Gothic",sans-serif;
+    background:var(--bg);color:var(--ink);line-height:1.7;padding:2.5rem 1rem;}
+  .wrap{max-width:880px;margin:0 auto;display:flex;flex-direction:column;gap:1.4rem;}
+  code{font-family:ui-monospace,Consolas,monospace;background:var(--accent-bg);
+    color:var(--accent-deep);padding:.08em .4em;border-radius:.3em;font-size:.92em;}
+  .hero{background:linear-gradient(120deg,var(--accent-deep),var(--accent));
+    color:#fff;border-radius:.9rem;padding:1.4rem 1.6rem;box-shadow:var(--shadow);}
+  .hero h1{font-size:1.5rem;font-weight:800;}
+  .hero p{color:#d2f0e2;margin:.4rem 0 .8rem;font-size:.95rem;}
+  .chips{display:flex;gap:.4rem;flex-wrap:wrap;}
+  .chips span{background:rgba(255,255,255,.18);border-radius:99em;
+    padding:.15em .9em;font-size:.78rem;font-weight:700;}
+  .card{background:var(--card);border-radius:.8rem;box-shadow:var(--shadow);
+    padding:1.1rem 1.4rem;}
+  .card h2{font-size:1.1rem;font-weight:800;margin-bottom:.7rem;
+    color:var(--accent-deep);}
+  ul{list-style:none;} li{padding-left:1.3em;position:relative;margin-bottom:.4em;}
+  li::before{content:"●";position:absolute;left:.1em;top:.05em;
+    color:var(--accent);font-size:.65em;}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:1rem;}
+  .scope{border-radius:.6rem;padding:.8rem 1rem;font-size:.92rem;}
+  .scope.do{background:var(--do-bg);color:var(--do);}
+  .scope.dont{background:var(--dont-bg);color:var(--dont);}
+  .scope b{display:block;margin-bottom:.4rem;font-size:.95rem;}
+  .flow{display:flex;gap:.4rem;align-items:center;flex-wrap:wrap;}
+  .flow span{background:var(--accent-bg);color:var(--accent-deep);
+    border-radius:.4rem;padding:.25em .7em;font-size:.85rem;font-weight:700;}
+  .flow i{color:var(--accent);font-style:normal;}
+  .why{background:var(--accent-bg);color:var(--accent-deep);
+    border-radius:.6rem;padding:.7rem 1rem;font-size:.9rem;}
+  .why b{font-weight:800;}
+  table{border-collapse:collapse;width:100%;font-size:.9rem;}
+  th{background:var(--accent);color:#fff;text-align:left;padding:.5em .8em;}
+  td{background:var(--card);padding:.5em .8em;border-bottom:2px solid var(--bg);}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ===== ヘッダー：何を・なぜ・現況 ===== -->
+  <div class="hero">
+    <h1>Tabane — エージェント監督特化ターミナル（MVP）</h1>
+    <p>1画面をペイン分割して複数の Claude Code / codex / CLI を並べ、各ペインに自由入力タイトルを付け、返事待ちになったペインが光って分かる Electron アプリ。</p>
+    <div class="chips">
+      <span>ステータス：ドラフト</span>
+      <span>規模：中</span>
+      <span>対象：新規リポ（Electron デスクトップアプリ）</span>
+      <span>2026-07-15</span>
+    </div>
+  </div>
+
+  <!-- ===== 1. 目的（why-first） ===== -->
+  <div class="card">
+    <h2>1. 目的</h2>
+    <p>複数の AI エージェント（Claude Code / codex）を並行で走らせると「どれが入力待ちか」を目視巡回する羽目になり、切り替えコストと見落としが発生する。既存ターミナル（Ghostty 等）はペインに恒常的なラベルを付けられず、返事待ちの可視化もない。<b>「並べる・名札を付ける・待ちが光る」の3点に特化した監督用ターミナル</b>を作り、複数エージェント運用の認知負荷を下げる。あわせて公開リポ + build in public でZenn記事・ポートフォリオ素材としても育てる。</p>
+  </div>
+
+  <!-- ===== 2. スコープ：最重要 ===== -->
+  <div class="card">
+    <h2>2. スコープ</h2>
+    <div class="cols">
+      <div class="scope do">
+        <b>やること（MVP）</b>
+        <ul>
+          <li>Electron + React + TypeScript + xterm.js + node-pty の土台（electron-vite）</li>
+          <li>ペインの分割（縦/横）・リサイズ・クローズ（1ウィンドウ内、Wave型レイアウト）</li>
+          <li>各ペイン上部の<b>固定タイトルバー（自由入力で編集可）</b></li>
+          <li>各ペインで zsh を起動（そこから claude / codex を手で叩く）</li>
+          <li><b>返事待ち検知</b>：エージェントが入力待ちになったらタイトルバーが発光 + 未読バッジ。フォーカスしたら消灯</li>
+          <li>日本語UI（メニュー・ラベル類。MVPはUI自体が少ない）</li>
+          <li>macOS（Apple Silicon）で動作。検証は起動→分割→claude起動→検知→消灯の手動動線</li>
+        </ul>
+      </div>
+      <div class="scope dont">
+        <b>やらないこと（MVP では）</b>
+        <ul>
+          <li>ブラウザ・ファイルビューア等のウィジェット（全部ターミナルでいい、が合意）</li>
+          <li>SSH / リモート接続・セッション永続化</li>
+          <li>タブ・複数ウィンドウ・ワークスペース</li>
+          <li>レイアウト・タイトルの保存/復元（v2）</li>
+          <li>yukisuna-brand テーマ適用・背景画像（v2。CSS 変数で差し込める作りにはしておく）</li>
+          <li>設定GUI（v2。MVPは設定ファイル or ハードコード最小限）</li>
+          <li>Windows / Linux 対応（構成上は可能。動作確認を後回しにするだけ）</li>
+          <li>エージェントAPI連携・自動応答などターミナル外の機能</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 3. 処理フロー ===== -->
+  <div class="card">
+    <h2>3. 処理フロー</h2>
+    <div class="flow">
+      <span>起動（1ペイン）</span><i>→</i>
+      <span>分割操作でペイン追加</span><i>→</i>
+      <span>ペインごとに node-pty で zsh 起動</span><i>→</i>
+      <span>xterm.js に出力を流す</span><i>→</i>
+      <span>main 側で PTY 出力を監視</span><i>→</i>
+      <span>「返事待ち」判定</span><i>→</i>
+      <span>タイトルバー発光</span><i>→</i>
+      <span>ペインフォーカスで消灯</span>
+    </div>
+    <div class="why" style="margin-top:.9rem;">
+      <b>why:</b> 検知は「出力が止まった＝考え終わって入力待ちらしい」だけだと誤検知する（長考中も止まる）。そこで <b>①BEL（Claude Code の terminal bell 通知）/ OSC 9・777 通知シーケンス</b>を一次シグナル、<b>②出力静止タイマー（数秒）+ 直近出力の入力待ちプロンプトらしさ</b>を補助シグナルにする2段構え。判定ロジックは renderer でなく main プロセス側に置き、ペインが非表示でも検知が動くようにする。
+    </div>
+  </div>
+
+  <!-- ===== 4. アプローチ案 ===== -->
+  <div class="card">
+    <h2>4. アプローチ案（返事待ち検知）</h2>
+    <table>
+      <tr><th>案</th><th>内容</th><th>トレードオフ</th><th>採否</th></tr>
+      <tr><td>A</td><td>BEL / OSC 通知シーケンス + 出力静止タイマーのハイブリッド</td><td>実装が素直で拡張しやすい。プロンプトパターン依存が薄い。静止タイマー単体の誤検知は BEL 優先で緩和</td><td><b>推奨</b></td></tr>
+      <tr><td>B</td><td>画面末尾のテキストをパターンマッチ（"❯" や "Do you want" 等）</td><td>Claude Code の UI 変更に追従が必要で壊れやすい。多言語・codex 対応も個別対応になる</td><td>—（補助シグナルとしてだけ利用）</td></tr>
+      <tr><td>C</td><td>プロセス状態（フォアグラウンドプロセスの CPU / read 待ち）を監視</td><td>正確だが macOS 依存の低レベル実装になり MVP には重い</td><td>—（v2以降の改善候補）</td></tr>
+    </table>
+  </div>
+
+  <!-- ===== 5. 変更対象ファイル（新規リポ構成） ===== -->
+  <div class="card">
+    <h2>5. リポ構成（新規作成）</h2>
+    <ul>
+      <li><code>package.json / electron.vite.config.ts</code> — electron-vite（React + TS テンプレ）ベース</li>
+      <li><code>src/main/</code> — PTY 管理（node-pty）・返事待ち判定・IPC</li>
+      <li><code>src/preload/</code> — contextBridge で renderer に安全な API を公開</li>
+      <li><code>src/renderer/</code> — React UI：分割レイアウト・ペイン・タイトルバー・xterm.js ラッパ</li>
+      <li><code>docs/specs/mvp.html</code> — この仕様書</li>
+      <li><code>CLAUDE.md / README.md</code> — リポ固有の開発ルール（グローバル CLAUDE.md は転記しない）</li>
+    </ul>
+  </div>
+
+  <!-- ===== 6. 残論点（合意 recap の引き継ぎ） ===== -->
+  <div class="card">
+    <h2>6. 残論点 / 合意メモ</h2>
+    <ul>
+      <li>決定：名前 = Tabane（GitHub 衝突なし、<code>Yukisuna777/tabane</code>）。Electron。公開リポ + build in public。MVP = 分割+タイトルバー+返事待ち検知</li>
+      <li>決定：Wave Terminal（Apache-2.0）は参考書として読む。コード流用する場合はライセンス表記に従う</li>
+      <li>未決：OSS ライセンス（MIT 推奨）— リポ公開時までに決める</li>
+      <li>未決：検知しきい値（静止何秒で発光か）— 実装後に実運用でチューニング</li>
+      <li>未決：GitHub リポ作成・初回 push のタイミング — ゆきさんの指示待ち</li>
+    </ul>
+  </div>
+
+</div>
+</body>
+</html>
