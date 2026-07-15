@@ -89,6 +89,34 @@ export function setTitle(node: LayoutNode, paneId: string, title: string): Layou
   return { ...node, children: node.children.map((c) => setTitle(c, paneId, title)) }
 }
 
+/** 復元データが妥当な LayoutNode の形か検証する（壊れた/旧形式の config で起動が死なないように）。 */
+export function isLayoutNode(v: unknown): v is LayoutNode {
+  if (!v || typeof v !== 'object') return false
+  const n = v as Record<string, unknown>
+  if (n.kind === 'pane') return typeof n.id === 'string' && typeof n.title === 'string'
+  if (n.kind === 'split') {
+    return (
+      Array.isArray(n.children) &&
+      n.children.length >= 2 &&
+      Array.isArray(n.sizes) &&
+      n.sizes.length === n.children.length &&
+      n.children.every(isLayoutNode)
+    )
+  }
+  return false
+}
+
+/** 復元したレイアウトから前セッションの inheritCwdFromPtyId を剥がす。
+ *  再起動で main の PTY 採番がリセットされ、古い pty-N が新しい別ペインの pty-N と
+ *  誤マッチして意図しない cwd 継承が起きるのを防ぐ。 */
+export function stripInheritCwd(node: LayoutNode): LayoutNode {
+  if (node.kind === 'pane') {
+    const { inheritCwdFromPtyId: _drop, ...rest } = node
+    return rest
+  }
+  return { ...node, children: node.children.map(stripInheritCwd) }
+}
+
 export function collectPaneIds(node: LayoutNode, acc: string[] = []): string[] {
   if (node.kind === 'pane') acc.push(node.id)
   else node.children.forEach((c) => collectPaneIds(c, acc))

@@ -7,6 +7,8 @@ import { join } from 'node:path'
 export interface TabaneConfig {
   backgroundImagePath?: string | null
   backgroundOpacity?: number
+  /** 復元用のレイアウト木（renderer の LayoutNode を JSON 化したもの） */
+  layout?: unknown
 }
 
 const configPath = (): string => join(app.getPath('userData'), 'config.json')

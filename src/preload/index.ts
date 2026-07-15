@@ -24,7 +24,9 @@ const api: TabaneApi = {
   onPtyExit: (cb) => subscribe<PtyExitEvent>('pty:exit', cb),
   onPtyStatus: (cb) => subscribe<PtyStatusEvent>('pty:status', cb),
   getBackground: () => ipcRenderer.invoke('bg:get'),
-  onBackgroundChange: (cb) => subscribe<BackgroundState>('bg:changed', cb)
+  onBackgroundChange: (cb) => subscribe<BackgroundState>('bg:changed', cb),
+  getLayout: () => ipcRenderer.invoke('layout:get'),
+  saveLayout: (layout) => ipcRenderer.send('layout:save', layout)
 }
 
 contextBridge.exposeInMainWorld('tabane', api)

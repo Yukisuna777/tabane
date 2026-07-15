@@ -63,6 +63,8 @@ function registerIpc(): void {
   ipcMain.on('pty:kill', (_e, id: string) => ptyManager.kill(id))
   ipcMain.on('pty:focus', (_e, id: string) => ptyManager.focus(id))
   ipcMain.handle('bg:get', () => currentBackground())
+  ipcMain.handle('layout:get', () => readConfig().layout ?? null)
+  ipcMain.on('layout:save', (_e, layout: unknown) => writeConfig({ layout }))
 }
 
 // ===== 背景画像 =====

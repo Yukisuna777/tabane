@@ -55,4 +55,7 @@ export interface TabaneApi {
   getBackground(): Promise<BackgroundState>
   /** メニュー操作で背景が変わったときの通知 */
   onBackgroundChange(cb: (s: BackgroundState) => void): () => void
+  /** 復元用レイアウトの取得・保存（中身は renderer の LayoutNode JSON） */
+  getLayout(): Promise<unknown>
+  saveLayout(layout: unknown): void
 }
