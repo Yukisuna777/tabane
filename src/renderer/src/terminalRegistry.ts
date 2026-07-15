@@ -19,11 +19,21 @@ export interface TermSession {
   ptyId: string | null
   /** createPty の結果。再アタッチ時は resolve 済みで即発火。 */
   readyPromise: Promise<string>
-  offData: (() => void) | null
   disposed: boolean
 }
 
 const sessions = new Map<string, TermSession>()
+// ptyId -> session。pty:data の振り分け用（グローバル1リスナー方式）。
+const byPtyId = new Map<string, TermSession>()
+
+// pty:data はペインごとに購読するとペイン数ぶんリスナーが増える（MaxListeners 警告の原因）。
+// グローバルに1個だけ購読して id で振り分ける ＝ 何ペインでもリスナー1個。
+const offGlobalData = window.tabane.onPtyData((e) => {
+  byPtyId.get(e.id)?.term.write(e.data)
+})
+// dev の HMR で本モジュールが再評価されると古いリスナーが残るため、破棄時に解除する。
+const hot = (import.meta as { hot?: { dispose(cb: () => void): void } }).hot
+if (hot) hot.dispose(() => offGlobalData())
 
 // テーマ×背景画像ON/OFF で端末テーマを組み立てる（fable 設計・brand 由来の値）。
 const THEME_BASES = {
@@ -134,7 +144,6 @@ export function attachTerminal(
     fit,
     el,
     ptyId: null,
-    offData: null,
     disposed: false,
     readyPromise: window.tabane.createPty({
       cols: term.cols || 80,
@@ -150,9 +159,7 @@ export function attachTerminal(
       return
     }
     session.ptyId = id
-    session.offData = window.tabane.onPtyData((e) => {
-      if (e.id === id) term.write(e.data)
-    })
+    byPtyId.set(id, session) // グローバルの pty:data 振り分けに登録
     term.onData((d) => window.tabane.writePty(id, d))
   })
 
@@ -170,8 +177,8 @@ export function pruneTerminals(alivePaneIds: Set<string>): void {
   for (const [paneId, session] of [...sessions.entries()]) {
     if (alivePaneIds.has(paneId)) continue
     session.disposed = true
-    session.offData?.()
     if (session.ptyId) {
+      byPtyId.delete(session.ptyId)
       window.tabane.killPty(session.ptyId)
     } else {
       // まだ生成中：resolve したら即 kill する
