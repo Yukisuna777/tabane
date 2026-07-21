@@ -1,0 +1,44 @@
+# tabane 配布ビルド設定（electron-builder）
+# electron-vite build で out/ を作ってから electron-builder が out/ を app 化する。
+appId: com.yukisuna.tabane
+productName: tabane
+
+directories:
+  # 成果物（.dmg / .zip / .app）の出力先。.gitignore 済み。
+  output: dist
+  # アイコン等のビルド資材。build/icon.icns を置けば自動採用（無ければ Electron 既定）。
+  buildResources: build
+
+# app に同梱するファイル。production 依存の node_modules は自動同梱される。
+files:
+  - out/**
+  - package.json
+
+# node-pty はネイティブモジュール（.node バイナリ）。asar 内からは dlopen できないため
+# 必ず unpack する。これを外すと起動時に PTY 生成で落ちる。
+asarUnpack:
+  - node_modules/node-pty/**
+
+mac:
+  category: public.app-category.developer-tools
+  # 自分用・個人配布のため署名しない（証明書なしでもビルドを通す）。
+  # 配布先で Gatekeeper に止められたら「右クリック→開く」または xattr -dr com.apple.quarantine で回避。
+  identity: null
+  target:
+    - target: dmg
+      arch:
+        - arm64
+    - target: zip
+      arch:
+        - arm64
+
+dmg:
+  # ドラッグで Applications へ入れる定番レイアウト。
+  contents:
+    - x: 130
+      y: 220
+      type: file
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications
