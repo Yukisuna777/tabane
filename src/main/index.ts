@@ -35,6 +35,12 @@ function createWindow(): void {
 
   mainWindow.on('ready-to-show', () => mainWindow?.show())
 
+  // 閉じたら参照を落とす。これが無いと破棄済み webContents に send して
+  // 「Object has been destroyed」で落ちる（閉じる際の killAll→pty exit が send を叩くため）。
+  mainWindow.on('closed', () => {
+    mainWindow = null
+  })
+
   mainWindow.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url)
     return { action: 'deny' }
@@ -49,7 +55,9 @@ function createWindow(): void {
 }
 
 const send = (channel: string, payload: unknown): void => {
-  mainWindow?.webContents.send(channel, payload)
+  // ウィンドウ破棄後にも pty exit/data コールバックが遅れて届くため、破棄済みなら送らない。
+  if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) return
+  mainWindow.webContents.send(channel, payload)
 }
 
 const ptyManager = new PtyManager(
