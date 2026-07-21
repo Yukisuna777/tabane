@@ -131,6 +131,22 @@ export function attachTerminal(
   const fit = new FitAddon()
   term.loadAddon(fit)
   term.open(el)
+
+  // Shift+Enter を改行として送る。素の xterm は Shift+Enter も Enter も同じ CR(\r) を
+  // 送るため、Claude Code など「Enter=送信・Shift+Enter=改行」を区別する CLI で改行できない。
+  // ESC+CR(\x1b\r) を送ると Claude Code が Alt/Option+Enter＝改行挿入として解釈する
+  // （kitty keyboard protocol のネゴ不要なので xterm でも確実に効く）。
+  // 肝は preventDefault：return false は xterm 内部処理を止めるだけで、これが無いと
+  // 非表示 textarea への既定の改行(=CR)が別経路で送られ「送信」に化ける。
+  term.attachCustomKeyEventHandler((e) => {
+    if (e.type === 'keydown' && e.key === 'Enter' && e.shiftKey) {
+      e.preventDefault()
+      const id = session.ptyId
+      if (id) window.tabane.writePty(id, '\x1b\r')
+      return false
+    }
+    return true
+  })
   try {
     term.loadAddon(new WebglAddon())
   } catch {
