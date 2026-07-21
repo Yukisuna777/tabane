@@ -3,6 +3,10 @@
 appId: com.yukisuna.tabane
 productName: tabane
 
+# 成果物名を固定する。Cask/install.sh がダウンロード URL を決め打ちできるようにするため。
+# 例: tabane-0.1.0-arm64.dmg / tabane-0.1.0-arm64.zip
+artifactName: ${name}-${version}-${arch}.${ext}
+
 directories:
   # 成果物（.dmg / .zip / .app）の出力先。.gitignore 済み。
   output: dist

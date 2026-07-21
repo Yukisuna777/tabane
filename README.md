@@ -42,6 +42,27 @@ Tabane は **並べる・名札を付ける・待ちが光る** の3点に絞っ
   組み変わってもシェルは死なない（破棄はペインを閉じたときだけ）。
 - 配色は [yukisuna-brand](https://github.com/Yukisuna777/yukisuna-brand) のカラートークンに基づく。
 
+## インストール（macOS / Apple Silicon）
+
+**Homebrew:**
+
+```bash
+brew install --cask yukisuna777/tap/tabane
+```
+
+**または install スクリプト:**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Yukisuna777/tabane/main/install.sh | bash
+```
+
+どちらも [GitHub Releases](https://github.com/Yukisuna777/tabane/releases) の最新版を `/Applications` に入れる。
+現状 **Apple Silicon (arm64) のみ**。手動で入れたい場合は Releases の `.dmg` を開いてドラッグでも可。
+
+> 未署名アプリのため、直接 `.dmg` から入れると初回に Gatekeeper で止まることがある。
+> その場合は `.app` を右クリック →「開く」、または `xattr -dr com.apple.quarantine /Applications/tabane.app`。
+> brew / install スクリプト経由なら隔離属性を自動で外すのでそのまま起動できる。
+
 ## 開発
 
 ```bash
@@ -50,6 +71,17 @@ npm run dev      # 開発起動
 npm run build    # ビルド
 npm run typecheck
 ```
+
+配布物のビルド（`dist/` に `.dmg` / `.zip` を出力。arm64・未署名）:
+
+```bash
+npm run pack     # .app だけ（動作確認用・軽い）
+npm run dist     # DMG + zip（配布用）
+```
+
+タグ `v*` を push すると GitHub Actions（`.github/workflows/release.yml`）が自動でビルドして
+Release に添付する。Homebrew tap を自動更新するには、tap リポへ push できる PAT を
+リポジトリ Secrets `HOMEBREW_TAP_TOKEN` に登録する（未登録なら tap 更新はスキップ）。
 
 macOS (Apple Silicon) で開発・動作確認。構成上 Windows / Linux も動くはずだが未検証。
 
