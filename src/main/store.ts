@@ -11,6 +11,8 @@ export interface TabaneConfig {
   fontSize?: number
   theme?: 'light' | 'dark'
   layoutRestore?: boolean
+  /** 起動時にシェルを開くフォルダ。null/未設定なら ~/（ホーム）。 */
+  defaultCwd?: string | null
   /** 復元用のレイアウト木（renderer の LayoutNode を JSON 化したもの） */
   layout?: unknown
 }

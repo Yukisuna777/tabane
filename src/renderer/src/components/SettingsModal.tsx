@@ -19,9 +19,13 @@ export function SettingsModal({ settings, onClose }: Props): JSX.Element {
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
 
-  const { background, fontSize, theme, layoutRestore } = settings
+  const { background, fontSize, theme, layoutRestore, defaultCwd } = settings
   const hasImage = !!background.dataUri
   const update = window.tabane.updateSettings
+  // フルパスは title に、表示はフォルダ名だけ（長いパスで崩れないように）
+  const cwdLabel = defaultCwd
+    ? defaultCwd.split('/').filter(Boolean).slice(-1)[0]
+    : '~/（ホーム）'
 
   return (
     <div className="modal-overlay" onMouseDown={onClose}>
@@ -75,6 +79,20 @@ export function SettingsModal({ settings, onClose }: Props): JSX.Element {
           >
             <span className="knob" />
           </button>
+        </section>
+
+        {/* 起動フォルダ */}
+        <section className="setting-row">
+          <label>起動フォルダ</label>
+          <div className="bg-actions">
+            <button onClick={() => window.tabane.pickDefaultCwd()}>選択…</button>
+            <button onClick={() => window.tabane.clearDefaultCwd()} disabled={!defaultCwd}>
+              ホーム
+            </button>
+            <span className="bg-status" title={defaultCwd ?? '~/'}>
+              {cwdLabel}
+            </span>
+          </div>
         </section>
 
         <div className="setting-divider" />

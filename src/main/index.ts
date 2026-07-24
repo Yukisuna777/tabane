@@ -64,7 +64,8 @@ const send = (channel: string, payload: unknown): void => {
 const ptyManager = new PtyManager(
   (id, data) => send('pty:data', { id, data }),
   (id, exitCode) => send('pty:exit', { id, exitCode }),
-  (id, status) => send('pty:status', { id, status })
+  (id, status) => send('pty:status', { id, status }),
+  () => readConfig().defaultCwd ?? undefined
 )
 
 function registerIpc(): void {
@@ -82,6 +83,11 @@ function registerIpc(): void {
   })
   ipcMain.on('bg:pick', () => void pickBackground())
   ipcMain.on('bg:clear', () => clearBackground())
+  ipcMain.on('cwd:pick', () => void pickDefaultCwd())
+  ipcMain.on('cwd:clear', () => {
+    writeConfig({ defaultCwd: null })
+    pushSettings()
+  })
   ipcMain.handle('layout:get', () => readConfig().layout ?? null)
   ipcMain.on('layout:save', (_e, layout: unknown) => writeConfig({ layout }))
   ipcMain.on('open:external', (_e, url: string) => {
@@ -122,7 +128,8 @@ function currentSettings(): AppSettings {
     },
     fontSize: cfg.fontSize ?? DEFAULT_FONT_SIZE,
     theme: cfg.theme ?? DEFAULT_THEME,
-    layoutRestore: cfg.layoutRestore ?? true
+    layoutRestore: cfg.layoutRestore ?? true,
+    defaultCwd: cfg.defaultCwd ?? null
   }
 }
 
@@ -145,6 +152,17 @@ async function pickBackground(): Promise<void> {
 
 function clearBackground(): void {
   writeConfig({ backgroundImagePath: null })
+  pushSettings()
+}
+
+async function pickDefaultCwd(): Promise<void> {
+  if (!mainWindow) return
+  const res = await dialog.showOpenDialog(mainWindow, {
+    title: '起動フォルダを選択',
+    properties: ['openDirectory', 'createDirectory']
+  })
+  if (res.canceled || res.filePaths.length === 0) return
+  writeConfig({ defaultCwd: res.filePaths[0] })
   pushSettings()
 }
 

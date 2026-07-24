@@ -29,6 +29,8 @@ const api: TabaneApi = {
   updateSettings: (patch: SettingsPatch) => ipcRenderer.send('settings:update', patch),
   pickBackground: () => ipcRenderer.send('bg:pick'),
   clearBackground: () => ipcRenderer.send('bg:clear'),
+  pickDefaultCwd: () => ipcRenderer.send('cwd:pick'),
+  clearDefaultCwd: () => ipcRenderer.send('cwd:clear'),
   onOpenSettings: (cb) => {
     const listener = (): void => cb()
     ipcRenderer.on('menu:open-settings', listener)

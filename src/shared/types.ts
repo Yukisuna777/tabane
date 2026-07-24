@@ -51,6 +51,8 @@ export interface AppSettings {
   theme: ThemeMode
   /** 起動時に前回レイアウトを復元するか */
   layoutRestore: boolean
+  /** 起動時にシェルを開くフォルダ（null なら ~/ ホーム） */
+  defaultCwd: string | null
 }
 
 /** 設定GUI から渡すスカラー設定のパッチ */
@@ -82,6 +84,9 @@ export interface TabaneApi {
   /** 背景画像をファイルダイアログで選ぶ／クリアする（main 側で永続化） */
   pickBackground(): void
   clearBackground(): void
+  /** 起動フォルダをダイアログで選ぶ／ホーム(既定)に戻す */
+  pickDefaultCwd(): void
+  clearDefaultCwd(): void
   /** メニューの「設定…」で設定GUIを開く合図 */
   onOpenSettings(cb: () => void): () => void
   /** 復元用レイアウトの取得・保存（中身は renderer の LayoutNode JSON） */

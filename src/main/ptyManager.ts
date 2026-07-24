@@ -64,7 +64,9 @@ export class PtyManager {
   constructor(
     private onData: (id: string, data: string) => void,
     private onExit: (id: string, exitCode: number) => void,
-    private onStatus: StatusListener
+    private onStatus: StatusListener,
+    /** 明示 cwd も継承も無いときの起動フォルダ（設定値）。未指定なら undefined を返す。 */
+    private getDefaultCwd: () => string | undefined = () => undefined
   ) {}
 
   async create(opts: PtyCreateOptions): Promise<string> {
@@ -79,6 +81,12 @@ export class PtyManager {
     }
     // 消えたディレクトリを cwd にすると spawn が失敗するため存在チェックしてフォールバック
     if (cwd && !existsSync(cwd)) cwd = undefined
+
+    // cwd 未確定なら「起動フォルダ」設定（存在すれば）→ ホームの順でフォールバック
+    if (!cwd) {
+      const configured = this.getDefaultCwd()
+      if (configured && existsSync(configured)) cwd = configured
+    }
 
     // ログインシェル（-l）で起動する。Finder/Dock 起動時の Electron は PATH が最小構成のため、
     // これが無いと claude / codex を bare name で spawn できない（tabane の目的そのもの）。

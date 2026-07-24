@@ -40,6 +40,8 @@
   --danger-hover-fg: #f0a5a5;
   --glass-pane: rgba(15, 26, 42, 0.55); /* 画像ON時のペイン */
   --glass-titlebar: rgba(20, 32, 51, 0.72); /* 画像ON時のタイトルバー */
+  --topbar-pill: rgba(10, 17, 28, 0.5); /* 上バーのロゴ+文字の下敷き（背景画像でも読める） */
+  --topbar-pill-bd: rgba(169, 210, 255, 0.16);
 }
 
 /* ================================================================
@@ -67,6 +69,8 @@
   --danger-hover-fg: #a03c3c;
   --glass-pane: rgba(246, 248, 252, 0.55); /* 白ガラス（alpha はダークと揃える） */
   --glass-titlebar: rgba(230, 235, 243, 0.72);
+  --topbar-pill: rgba(241, 244, 249, 0.66);
+  --topbar-pill-bd: rgba(38, 50, 72, 0.12);
 }
 
 * {
@@ -95,22 +99,52 @@ body {
 .app {
   height: 100%;
   width: 100%;
-  padding: 6px;
-  /* macOS hiddenInset のタイトルバー分だけ上を空ける */
-  padding-top: 30px;
+  display: flex;
+  flex-direction: column;
   background: radial-gradient(120% 120% at 0% 0%, var(--bg-elev) 0%, var(--bg) 55%);
 }
 
-/* macOS hiddenInset：上部の空き帯をドラッグ領域にしてウィンドウを動かせるようにする。
-   信号機ボタン(❌等)の並ぶ帯とちょうど重なる高さ。パネル本体(y=30以降)は覆わない。 */
-.titlebar-drag {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 30px;
+/* macOS hiddenInset：信号機ボタン帯と重なる高さの上バー。中央にロゴ＋タイトル。
+   バー全体をドラッグ領域にしてウィンドウを動かせる。ボタン(左上)とシェル領域の間に、
+   ウィンドウ枠とボタンの間と同じゆとりを作る役割も兼ねる。 */
+.topbar {
+  flex: none;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   -webkit-app-region: drag;
-  z-index: 50;
+}
+/* ロゴ＋文字を1枚のフロストピルに載せる。背景画像が明るくても暗くても読めるよう、
+   すりガラスの下敷きで局所コントラストを担保する。 */
+.topbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 11px 3px 8px;
+  border-radius: 999px;
+  background: var(--topbar-pill);
+  border: 1px solid var(--topbar-pill-bd);
+  backdrop-filter: blur(10px) saturate(1.1);
+  -webkit-backdrop-filter: blur(10px) saturate(1.1);
+}
+.topbar-mark {
+  width: 17px;
+  height: 23px;
+  display: block;
+}
+.topbar-title {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text);
+}
+
+/* シェル領域。上はバーが空けるので、側面・下だけ枠余白を持たせる（上は詰める）。 */
+.app-body {
+  flex: 1;
+  min-height: 0;
+  padding: 0 6px 6px;
 }
 
 /* インタラクティブ要素はドラッグに吸われないよう明示的に除外（保険） */

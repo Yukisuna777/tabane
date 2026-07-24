@@ -22,11 +22,51 @@ import {
 
 let paneCounter = 1
 
+/** 上バー中央のロゴ（束ねマーク）。Ice=返事待ち / Orange=通知 の2状態を象徴。 */
+function LogoMark(): JSX.Element {
+  return (
+    <svg className="topbar-mark" viewBox="300 236 424 576" fill="none" aria-hidden="true">
+      <defs>
+        <filter id="tb-glow" x="-40%" y="-40%" width="180%" height="180%">
+          <feGaussianBlur stdDeviation="10" result="b" />
+          <feMerge>
+            <feMergeNode in="b" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+      </defs>
+      <g stroke="#cdd8f2" strokeWidth="22" strokeLinecap="round" fill="none" opacity="0.92">
+        <path d="M326 300 C326 450 470 410 470 560 C470 650 455 702 455 792" />
+        <path d="M512 256 C512 406 512 410 512 560 C512 650 512 702 512 792" />
+        <path d="M605 268 C605 418 533 410 533 560 C533 650 541 702 541 792" />
+      </g>
+      <path
+        d="M419 268 C419 418 491 410 491 560 C491 650 483 702 483 792"
+        stroke="#a9d2ff"
+        strokeWidth="24"
+        strokeLinecap="round"
+        fill="none"
+        filter="url(#tb-glow)"
+      />
+      <path
+        d="M698 300 C698 450 554 410 554 560 C554 650 569 702 569 792"
+        stroke="#ffb057"
+        strokeWidth="24"
+        strokeLinecap="round"
+        fill="none"
+        filter="url(#tb-glow)"
+      />
+      <rect x="432" y="534" width="160" height="52" rx="26" fill="#e6ecfa" />
+    </svg>
+  )
+}
+
 const DEFAULT_SETTINGS: AppSettings = {
   background: { dataUri: null, opacity: 0.2, blur: 2 },
   fontSize: 13,
   theme: 'dark',
-  layoutRestore: true
+  layoutRestore: true,
+  defaultCwd: null
 }
 
 export function App(): JSX.Element {
@@ -176,19 +216,26 @@ export function App(): JSX.Element {
         }}
       />
       <div className="app">
-        <div className="titlebar-drag" />
-        {layout && (
-          <SplitView
-            node={layout}
-            activePaneId={activePaneId}
-            statusByPty={statusByPty}
-            onActivate={setActivePaneId}
-            onSplit={handleSplit}
-            onClose={handleClose}
-            onResize={handleResize}
-            onTitleChange={handleTitle}
-          />
-        )}
+        <div className="topbar">
+          <div className="topbar-brand">
+            <LogoMark />
+            <span className="topbar-title">tabane</span>
+          </div>
+        </div>
+        <div className="app-body">
+          {layout && (
+            <SplitView
+              node={layout}
+              activePaneId={activePaneId}
+              statusByPty={statusByPty}
+              onActivate={setActivePaneId}
+              onSplit={handleSplit}
+              onClose={handleClose}
+              onResize={handleResize}
+              onTitleChange={handleTitle}
+            />
+          )}
+        </div>
       </div>
       {settingsOpen && (
         <SettingsModal settings={settings} onClose={() => setSettingsOpen(false)} />
