@@ -1,0 +1,50 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="night" x1="512" y1="0" x2="512" y2="1024" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1c2029"/>
+      <stop offset="1" stop-color="#111319"/>
+    </linearGradient>
+    <!-- 月明かりのグロー（強め）。中心を明るくしてロゴの芯を見やすくする。 -->
+    <radialGradient id="moon" cx="512" cy="516" r="440" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#c4e2ff" stop-opacity="0.34"/>
+      <stop offset="0.5" stop-color="#a9d2ff" stop-opacity="0.12"/>
+      <stop offset="1" stop-color="#a9d2ff" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="12" result="b"/>
+      <feMerge>
+        <feMergeNode in="b"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- 夜の地（角丸スクエア） -->
+  <rect x="0" y="0" width="1024" height="1024" rx="230" fill="url(#night)"/>
+  <rect x="0" y="0" width="1024" height="1024" rx="230" fill="url(#moon)"/>
+
+  <!-- 束ねマーク（余白を詰めるため中心基準で拡大） -->
+  <g transform="translate(512 524) scale(1.52) translate(-512 -524)">
+    <!-- 束ねられる線（月明かりのシルバー） -->
+    <g stroke="#cdd8f2" stroke-width="22" stroke-linecap="round" fill="none" opacity="0.92">
+      <path d="M326 300 C326 450 470 410 470 560 C470 650 455 702 455 792"/>
+      <path d="M512 256 C512 406 512 410 512 560 C512 650 512 702 512 792"/>
+      <path d="M605 268 C605 418 533 410 533 560 C533 650 541 702 541 792"/>
+    </g>
+
+    <!-- 返事待ち：Ice Blue で発光（左から2本目） -->
+    <path d="M419 268 C419 418 491 410 491 560 C491 650 483 702 483 792"
+          stroke="#a9d2ff" stroke-width="24" stroke-linecap="round" fill="none" filter="url(#glow)"/>
+
+    <!-- 通知：オレンジで発光（右端） -->
+    <path d="M698 300 C698 450 554 410 554 560 C554 650 569 702 569 792"
+          stroke="#ffb057" stroke-width="24" stroke-linecap="round" fill="none" filter="url(#glow)"/>
+
+    <!-- 束ねる結び目（タイ） -->
+    <rect x="432" y="534" width="160" height="52" rx="26" fill="#e6ecfa"/>
+    <rect x="432" y="534" width="160" height="52" rx="26" fill="none" stroke="#0e1016" stroke-width="2" opacity="0.25"/>
+  </g>
+
+  <!-- 縁のリム：暗い地に対して明るい反対トーンで縁取り、中心へ視線を集める -->
+  <rect x="7" y="7" width="1010" height="1010" rx="223" fill="none" stroke="#a9d2ff" stroke-opacity="0.4" stroke-width="5"/>
+</svg>

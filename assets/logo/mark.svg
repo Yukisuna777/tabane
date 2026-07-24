@@ -1,0 +1,29 @@
+<svg width="424" height="576" viewBox="300 236 424 576" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="10" result="b"/>
+      <feMerge>
+        <feMergeNode in="b"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- 束ねられる線（月明かりのシルバー） -->
+  <g stroke="#cdd8f2" stroke-width="22" stroke-linecap="round" fill="none" opacity="0.92">
+    <path d="M326 300 C326 450 470 410 470 560 C470 650 455 702 455 792"/>
+    <path d="M512 256 C512 406 512 410 512 560 C512 650 512 702 512 792"/>
+    <path d="M605 268 C605 418 533 410 533 560 C533 650 541 702 541 792"/>
+  </g>
+
+  <!-- 返事待ち：Ice Blue で発光（左から2本目） -->
+  <path d="M419 268 C419 418 491 410 491 560 C491 650 483 702 483 792"
+        stroke="#a9d2ff" stroke-width="24" stroke-linecap="round" fill="none" filter="url(#glow)"/>
+
+  <!-- 通知：オレンジで発光（右端） -->
+  <path d="M698 300 C698 450 554 410 554 560 C554 650 569 702 569 792"
+        stroke="#ffb057" stroke-width="24" stroke-linecap="round" fill="none" filter="url(#glow)"/>
+
+  <!-- 束ねる結び目（タイ） -->
+  <rect x="432" y="534" width="160" height="52" rx="26" fill="#e6ecfa"/>
+</svg>
