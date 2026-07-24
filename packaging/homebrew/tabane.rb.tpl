@@ -1,4 +1,4 @@
-# Homebrew Cask 雛形。release ワークフローが __VERSION__ / __SHA256__ を差し替えて
+# Homebrew Cask 雛形。release ワークフローがバージョンと sha256 を差し替えて
 # homebrew-tap リポの Casks/tabane.rb として push する。手で差し替えて使ってもよい。
 cask "tabane" do
   version "__VERSION__"
@@ -13,6 +13,13 @@ cask "tabane" do
   depends_on arch: :arm64
 
   app "tabane.app"
+
+  # 未署名アプリ対策。Homebrew は DL 物に quarantine を付けるが、arm64 では未署名＋
+  # quarantine だと「壊れているため開けません」になる。install.sh と同じく除去して開けるようにする。
+  postflight do
+    system_command "/usr/bin/xattr",
+                   args: ["-dr", "com.apple.quarantine", "#{appdir}/tabane.app"]
+  end
 
   # アンインストール時に消す設定・キャッシュ（store.ts の userData 配下）
   zap trash: [

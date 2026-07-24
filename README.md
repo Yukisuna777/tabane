@@ -59,9 +59,11 @@ curl -fsSL https://raw.githubusercontent.com/Yukisuna777/tabane/main/install.sh 
 どちらも [GitHub Releases](https://github.com/Yukisuna777/tabane/releases) の最新版を `/Applications` に入れる。
 現状 **Apple Silicon (arm64) のみ**。手動で入れたい場合は Releases の `.dmg` を開いてドラッグでも可。
 
-> 未署名アプリのため、直接 `.dmg` から入れると初回に Gatekeeper で止まることがある。
-> その場合は `.app` を右クリック →「開く」、または `xattr -dr com.apple.quarantine /Applications/tabane.app`。
-> brew / install スクリプト経由なら隔離属性を自動で外すのでそのまま起動できる。
+> **未署名アプリ**のため、`.dmg` から手動で入れると arm64 では「"tabane" は壊れているため開けません」
+> （＝未署名＋quarantine の Gatekeeper ブロック）が出る。その場合はターミナルで
+> `xattr -dr com.apple.quarantine /Applications/tabane.app` を実行すれば開ける。
+> **brew（cask の postflight）と install スクリプトは、この quarantine 除去を自動でやる**ので
+> そのまま起動できる（`.dmg` 手動導入のときだけ上記の一手間が要る）。恒久対応は署名＋notarization。
 
 ## 開発
 
