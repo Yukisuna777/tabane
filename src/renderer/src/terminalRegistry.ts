@@ -126,6 +126,11 @@ export function attachTerminal(
     allowProposedApi: true,
     // 背景画像を透かすため常に true。false だと色付きセルに黒帯が焼き込まれ破綻する（fable実機確認）。
     allowTransparency: true,
+    // OSC 8 ハイパーリンクの既定挙動（confirm→window.open()＝about:blank）を潰し、
+    // 本物の URL を既定ブラウザで直接開く。
+    linkHandler: {
+      activate: (_event, uri) => window.tabane.openExternal(uri)
+    },
     theme: computeTheme()
   })
   const fit = new FitAddon()

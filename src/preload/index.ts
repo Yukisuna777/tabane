@@ -35,7 +35,8 @@ const api: TabaneApi = {
     return () => ipcRenderer.removeListener('menu:open-settings', listener)
   },
   getLayout: () => ipcRenderer.invoke('layout:get'),
-  saveLayout: (layout) => ipcRenderer.send('layout:save', layout)
+  saveLayout: (layout) => ipcRenderer.send('layout:save', layout),
+  openExternal: (url) => ipcRenderer.send('open:external', url)
 }
 
 contextBridge.exposeInMainWorld('tabane', api)

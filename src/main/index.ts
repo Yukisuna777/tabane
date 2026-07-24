@@ -42,7 +42,8 @@ function createWindow(): void {
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url)
+    // http(s) のみ外部に流す。about:blank 等が来ても OS のアプリ選択を出さない。
+    if (/^https?:\/\//i.test(details.url)) void shell.openExternal(details.url)
     return { action: 'deny' }
   })
 
@@ -83,6 +84,10 @@ function registerIpc(): void {
   ipcMain.on('bg:clear', () => clearBackground())
   ipcMain.handle('layout:get', () => readConfig().layout ?? null)
   ipcMain.on('layout:save', (_e, layout: unknown) => writeConfig({ layout }))
+  ipcMain.on('open:external', (_e, url: string) => {
+    // 端末内リンクを既定ブラウザで開く。http(s) のみ許可（危険/未対応スキームは無視）。
+    if (typeof url === 'string' && /^https?:\/\//i.test(url)) void shell.openExternal(url)
+  })
 }
 
 // ===== 設定（背景画像・フォント・テーマ・レイアウト復元） =====

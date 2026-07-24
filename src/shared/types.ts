@@ -87,4 +87,6 @@ export interface TabaneApi {
   /** 復元用レイアウトの取得・保存（中身は renderer の LayoutNode JSON） */
   getLayout(): Promise<unknown>
   saveLayout(layout: unknown): void
+  /** 端末内リンクを既定ブラウザで開く（http(s) のみ。main で shell.openExternal） */
+  openExternal(url: string): void
 }
