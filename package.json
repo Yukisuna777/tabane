@@ -1,6 +1,6 @@
 {
   "name": "tabane",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "エージェント監督特化ターミナル — 1画面で複数の Claude Code / codex / CLI を並べ、返事待ちが光って分かる",
   "author": "yukisuna777",
   "license": "MIT",
