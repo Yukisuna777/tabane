@@ -12,6 +12,24 @@ export interface PtyCreateOptions {
   inheritCwdFromPtyId?: string
   cols: number
   rows: number
+  /**
+   * `tabane open` が予約した起動スペックの ID。
+   * renderer は中身を知らず持ち回るだけで、cwd や起動コマンドの解決は main が行う。
+   */
+  spawnSpecId?: string
+}
+
+/** main -> renderer : CLI から要求されたペイン生成 */
+export interface PaneSpawnEvent {
+  /** createPty に渡し返してもらう。main はこれで起動スペックを引く。 */
+  specId: string
+  title: string
+}
+
+/** renderer -> main : ペイン一覧の同期（`tabane list` の TITLE 用）。 */
+export interface PaneSyncEntry {
+  ptyId: string
+  title: string
 }
 
 /** main -> renderer : PTY からの出力 */
@@ -64,6 +82,81 @@ export interface SettingsPatch {
   layoutRestore?: boolean
 }
 
+// ================================================================
+// tabane CLI ⇄ main の socket プロトコル（JSON Lines）。
+// 1行 = 1メッセージ。リクエストを送ると同じ接続でレスポンスが1つ返る。
+// bin/tabane は素の Node スクリプトでこの型を import しないため、
+// ここは「実装が従うべき契約書」として置く（両側で形を揃える）。
+// ================================================================
+
+/** エージェント（子 claude）の申告状態。ペイン状態(PaneStatus)とは別軸。 */
+export type AgentState = 'running' | 'done' | 'needs_input' | 'closed'
+
+/** 子セッションの権限。strict=既定 / edit=編集のみ自動 / yolo=全自動。 */
+export type PermissionMode = 'strict' | 'edit' | 'yolo'
+
+export interface OpenRequest {
+  cmd: 'open'
+  cwd: string
+  /** 省略時は claude を起動せずシェルだけ開く。 */
+  prompt?: string
+  title?: string
+  permission?: PermissionMode
+}
+
+export interface ListRequest {
+  cmd: 'list'
+}
+
+export interface WaitRequest {
+  cmd: 'wait'
+  /** 待つペイン番号（ptyId の連番部分）。 */
+  panes: number[]
+  /** 秒。切れてもエラーにせず現在の状態を返す。 */
+  timeout?: number
+}
+
+export interface KillRequest {
+  cmd: 'kill'
+  panes?: number[]
+  all?: boolean
+}
+
+/** hooks から呼ばれる内部向け。人間・指揮役が直接使う想定はしない。 */
+export interface ReportRequest {
+  cmd: 'report'
+  pane: number
+  state: AgentState
+}
+
+export type TabaneRequest =
+  | OpenRequest
+  | ListRequest
+  | WaitRequest
+  | KillRequest
+  | ReportRequest
+
+/** list の1行ぶん。 */
+export interface PaneInfo {
+  /** ペイン番号（ptyId の連番部分）。 */
+  id: number
+  title: string
+  cwd: string
+  /** hooks 未申告（素のシェル等）は null。 */
+  agent: AgentState | null
+  pane: PaneStatus
+}
+
+/** wait の結果1件。hooks を持たないペイン（素のシェル等）は 'unknown'。 */
+export interface WaitResult {
+  id: number
+  state: AgentState | 'unknown'
+}
+
+export type TabaneResponse =
+  | { ok: true; data?: unknown }
+  | { ok: false; error: string }
+
 /** preload が contextBridge で renderer に公開する API */
 export interface TabaneApi {
   createPty(opts: PtyCreateOptions): Promise<string>
@@ -94,4 +187,10 @@ export interface TabaneApi {
   saveLayout(layout: unknown): void
   /** 端末内リンクを既定ブラウザで開く（http(s) のみ。main で shell.openExternal） */
   openExternal(url: string): void
+  /** CLI（tabane open）から要求されたペイン生成の通知 */
+  onPaneSpawn(cb: (e: PaneSpawnEvent) => void): () => void
+  /** CLI（tabane kill）から要求されたペイン終了の通知。ptyId で対象を指す。 */
+  onPaneClose(cb: (e: { ptyIds: string[] }) => void): () => void
+  /** ペイン一覧（ptyId とタイトル）を main に同期する。tabane list が使う。 */
+  syncPanes(panes: PaneSyncEntry[]): void
 }

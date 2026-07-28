@@ -51,6 +51,7 @@ export function Pane({
         paneId={node.id}
         active={active}
         inheritCwdFromPtyId={node.inheritCwdFromPtyId}
+        spawnSpecId={node.spawnSpecId}
         onReady={setPtyId}
         onActivate={activate}
       />

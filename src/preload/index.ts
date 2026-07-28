@@ -1,6 +1,8 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import type {
   AppSettings,
+  PaneSpawnEvent,
+  PaneSyncEntry,
   PtyCreateOptions,
   PtyDataEvent,
   PtyExitEvent,
@@ -38,7 +40,10 @@ const api: TabaneApi = {
   },
   getLayout: () => ipcRenderer.invoke('layout:get'),
   saveLayout: (layout) => ipcRenderer.send('layout:save', layout),
-  openExternal: (url) => ipcRenderer.send('open:external', url)
+  openExternal: (url) => ipcRenderer.send('open:external', url),
+  onPaneSpawn: (cb) => subscribe<PaneSpawnEvent>('pane:spawn', cb),
+  onPaneClose: (cb) => subscribe<{ ptyIds: string[] }>('pane:close', cb),
+  syncPanes: (panes: PaneSyncEntry[]) => ipcRenderer.send('pane:sync', panes)
 }
 
 contextBridge.exposeInMainWorld('tabane', api)

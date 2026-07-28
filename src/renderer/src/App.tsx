@@ -1,21 +1,24 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { AppSettings, PaneStatus, SplitDir } from '../../shared/types'
+import type { AppSettings, PaneStatus, PaneSyncEntry, SplitDir } from '../../shared/types'
 import {
+  appendPane,
   closePane,
   collectPaneIds,
+  collectPanes,
   createPane,
   isLayoutNode,
   type LayoutNode,
   setSizes,
   setTitle,
   splitPane,
-  stripInheritCwd
+  stripVolatile
 } from './layout'
 import { SplitView } from './components/SplitView'
 import { SettingsModal } from './components/SettingsModal'
 import {
   getSession,
   pruneTerminals,
+  setSessionReadyListener,
   setTerminalFontSize,
   setTerminalTheme
 } from './terminalRegistry'
@@ -81,7 +84,7 @@ export function App(): JSX.Element {
   useEffect(() => {
     Promise.all([window.tabane.getSettings(), window.tabane.getLayout()]).then(([s, saved]) => {
       setSettings(s)
-      const restored = s.layoutRestore && isLayoutNode(saved) ? stripInheritCwd(saved) : null
+      const restored = s.layoutRestore && isLayoutNode(saved) ? stripVolatile(saved) : null
       setLayout(restored ?? createPane('shell 1'))
     })
     return window.tabane.onSettingsChange(setSettings)
@@ -166,6 +169,60 @@ export function App(): JSX.Element {
     setLayout(next)
     window.tabane.saveLayout(next)
   }, [])
+
+  // CLI（tabane open）からのペイン生成要求。木の一番外側に1枚足す。
+  // 分割と違い対象ペインを持たないので、どのペインが active かに依存しない。
+  useEffect(
+    () =>
+      window.tabane.onPaneSpawn(({ specId, title }) => {
+        const prev = layoutRef.current
+        if (!prev) return
+        applyAndSave(appendPane(prev, title, specId))
+      }),
+    [applyAndSave]
+  )
+
+  // CLI（tabane kill）からのペイン終了要求。main は ptyId しか知らないので、
+  // ここで paneId に引き直して閉じる（PTY の破棄は prune 経路が担う）。
+  useEffect(
+    () =>
+      window.tabane.onPaneClose(({ ptyIds }) => {
+        const prev = layoutRef.current
+        if (!prev) return
+        const targets = new Set(ptyIds)
+        let next: LayoutNode | null = prev
+        for (const pane of collectPanes(prev)) {
+          const ptyId = getSession(pane.id)?.ptyId
+          if (!ptyId || !targets.has(ptyId) || !next) continue
+          next = closePane(next, pane.id)
+        }
+        applyAndSave(next ?? createPane('shell 1'))
+      }),
+    [applyAndSave]
+  )
+
+  // ptyId とタイトルの対応を main に同期する（tabane list の TITLE 用）。
+  // main は PTY しか知らず、タイトルは layout 側にしか無いため。
+  const syncPanes = useCallback(() => {
+    const current = layoutRef.current
+    if (!current) return
+    const entries: PaneSyncEntry[] = []
+    for (const pane of collectPanes(current)) {
+      const ptyId = getSession(pane.id)?.ptyId
+      if (ptyId) entries.push({ ptyId, title: pane.title })
+    }
+    window.tabane.syncPanes(entries)
+  }, [])
+
+  // レイアウトが変わった時（タイトル変更・開閉）と、PTY が出来た時の両方で同期する。
+  useEffect(() => {
+    syncPanes()
+  }, [layout, syncPanes])
+
+  useEffect(() => {
+    setSessionReadyListener(syncPanes)
+    return () => setSessionReadyListener(null)
+  }, [syncPanes])
 
   const handleSplit = useCallback(
     (paneId: string, dir: SplitDir) => {

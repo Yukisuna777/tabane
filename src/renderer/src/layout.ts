@@ -11,6 +11,11 @@ export interface PaneNode {
   title: string
   /** このペイン生成時、分割元シェルの cwd を継ぐための元 PTY id（初回ペインは無し）。 */
   inheritCwdFromPtyId?: string
+  /**
+   * `tabane open` 由来のペインが、createPty 時に main へ返す起動スペックの ID。
+   * renderer は中身を知らず持ち回るだけ。PTY 生成後は用済み。
+   */
+  spawnSpecId?: string
 }
 
 export interface SplitNode {
@@ -28,6 +33,25 @@ const uid = (): string => crypto.randomUUID()
 
 export function createPane(title: string, inheritCwdFromPtyId?: string): PaneNode {
   return { kind: 'pane', id: uid(), title, inheritCwdFromPtyId }
+}
+
+/**
+ * 木の一番外側にペインを1枚足す（`tabane open` 用）。
+ * ルートが分割ならその子として末尾に加えて均等配分し、単一ペインなら2分割にする。
+ * 分割操作と違い「どのペインを対象にするか」を必要としないため、外部要求と相性がよい。
+ */
+export function appendPane(
+  node: LayoutNode,
+  title: string,
+  spawnSpecId: string,
+  dir: SplitDir = 'row'
+): LayoutNode {
+  const fresh: PaneNode = { kind: 'pane', id: uid(), title, spawnSpecId }
+  if (node.kind === 'pane') {
+    return { kind: 'split', id: uid(), dir, children: [node, fresh], sizes: [50, 50] }
+  }
+  const children = [...node.children, fresh]
+  return { ...node, children, sizes: children.map(() => 100 / children.length) }
 }
 
 /** 対象ペインを、その場で [元ペイン, 新ペイン] の分割に置き換える。 */
@@ -106,20 +130,28 @@ export function isLayoutNode(v: unknown): v is LayoutNode {
   return false
 }
 
-/** 復元したレイアウトから前セッションの inheritCwdFromPtyId を剥がす。
- *  再起動で main の PTY 採番がリセットされ、古い pty-N が新しい別ペインの pty-N と
- *  誤マッチして意図しない cwd 継承が起きるのを防ぐ。 */
-export function stripInheritCwd(node: LayoutNode): LayoutNode {
+/** 復元したレイアウトから、前セッション限りの情報を剥がす。
+ *  - inheritCwdFromPtyId: 再起動で main の PTY 採番がリセットされ、古い pty-N が
+ *    新しい別ペインの pty-N と誤マッチして意図しない cwd 継承が起きるのを防ぐ。
+ *  - spawnSpecId: main 側の起動スペックは再起動で消えているため、持ち越しても意味がない。 */
+export function stripVolatile(node: LayoutNode): LayoutNode {
   if (node.kind === 'pane') {
-    const { inheritCwdFromPtyId: _drop, ...rest } = node
+    const { inheritCwdFromPtyId: _cwd, spawnSpecId: _spec, ...rest } = node
     return rest
   }
-  return { ...node, children: node.children.map(stripInheritCwd) }
+  return { ...node, children: node.children.map(stripVolatile) }
 }
 
 export function collectPaneIds(node: LayoutNode, acc: string[] = []): string[] {
   if (node.kind === 'pane') acc.push(node.id)
   else node.children.forEach((c) => collectPaneIds(c, acc))
+  return acc
+}
+
+/** ペインノードを表示順に集める（タイトルごと欲しいとき用）。 */
+export function collectPanes(node: LayoutNode, acc: PaneNode[] = []): PaneNode[] {
+  if (node.kind === 'pane') acc.push(node)
+  else node.children.forEach((c) => collectPanes(c, acc))
   return acc
 }
 
