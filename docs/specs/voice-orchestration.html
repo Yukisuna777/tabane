@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<!--
+  Tabane 音声オーケストレーション 仕様書（yukisuna-brand/flow/templates/spec.html 派生）
+  原則：実装に入る前に承認する。承認まで実装は始めない（仕様 = 人間と AI の契約書）。
+-->
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>仕様書 — Tabane 音声オーケストレーション</title>
+<style>
+  :root{
+    --ink:#1f2a26; --muted:#5b6b64; --bg:#f4f8f6; --card:#fff;
+    --accent:#0f9d6b; --accent-deep:#0a7350; --accent-bg:#e6f5ee;
+    --do-bg:#e6f5ee; --do:#0a7350; --dont-bg:#fdeaef; --dont:#be123c;
+    --warn-bg:#fef6e7; --warn:#9a6209;
+    --shadow:0 2px 10px rgba(15,60,45,.08),0 1px 3px rgba(15,60,45,.06);
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{font-family:"Hiragino Sans","Noto Sans JP","Yu Gothic",sans-serif;
+    background:var(--bg);color:var(--ink);line-height:1.7;padding:2.5rem 1rem;}
+  .wrap{max-width:880px;margin:0 auto;display:flex;flex-direction:column;gap:1.4rem;}
+  code{font-family:ui-monospace,Consolas,monospace;background:var(--accent-bg);
+    color:var(--accent-deep);padding:.08em .4em;border-radius:.3em;font-size:.92em;}
+  pre{font-family:ui-monospace,Consolas,monospace;background:#0f1a17;color:#d7ece2;
+    padding:.9rem 1.1rem;border-radius:.5rem;font-size:.83rem;line-height:1.65;
+    overflow-x:auto;}
+  pre b{color:#6ee7b7;font-weight:600;}
+  pre i{color:#8fa89e;font-style:normal;}
+  .hero{background:linear-gradient(120deg,var(--accent-deep),var(--accent));
+    color:#fff;border-radius:.9rem;padding:1.4rem 1.6rem;box-shadow:var(--shadow);}
+  .hero h1{font-size:1.5rem;font-weight:800;}
+  .hero p{color:#d2f0e2;margin:.4rem 0 .8rem;font-size:.95rem;}
+  .chips{display:flex;gap:.4rem;flex-wrap:wrap;}
+  .chips span{background:rgba(255,255,255,.18);border-radius:99em;
+    padding:.15em .9em;font-size:.78rem;font-weight:700;}
+  .card{background:var(--card);border-radius:.8rem;box-shadow:var(--shadow);
+    padding:1.1rem 1.4rem;}
+  .card h2{font-size:1.1rem;font-weight:800;margin-bottom:.7rem;
+    color:var(--accent-deep);}
+  .card h3{font-size:.95rem;font-weight:800;margin:1rem 0 .4rem;}
+  .card h3:first-of-type{margin-top:.3rem;}
+  .card p + p{margin-top:.6rem;}
+  ul{list-style:none;} li{padding-left:1.3em;position:relative;margin-bottom:.4em;}
+  li::before{content:"●";position:absolute;left:.1em;top:.05em;
+    color:var(--accent);font-size:.65em;}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:1rem;}
+  @media(max-width:640px){.cols{grid-template-columns:1fr;}}
+  .scope{border-radius:.6rem;padding:.8rem 1rem;font-size:.92rem;}
+  .scope.do{background:var(--do-bg);color:var(--do);}
+  .scope.dont{background:var(--dont-bg);color:var(--dont);}
+  .scope b{display:block;margin-bottom:.4rem;font-size:.95rem;}
+  .scope li::before{color:currentColor;opacity:.55;}
+  .flow{display:flex;gap:.4rem;align-items:center;flex-wrap:wrap;}
+  .flow span{background:var(--accent-bg);color:var(--accent-deep);
+    border-radius:.4rem;padding:.25em .7em;font-size:.85rem;font-weight:700;}
+  .flow i{color:var(--accent);font-style:normal;}
+  .why{background:var(--accent-bg);color:var(--accent-deep);
+    border-radius:.6rem;padding:.7rem 1rem;font-size:.9rem;margin-top:.9rem;}
+  .why b{font-weight:800;}
+  .warn{background:var(--warn-bg);color:var(--warn);
+    border-radius:.6rem;padding:.7rem 1rem;font-size:.9rem;margin-top:.9rem;}
+  .warn b{font-weight:800;}
+  table{border-collapse:collapse;width:100%;font-size:.9rem;}
+  th{background:var(--accent);color:#fff;text-align:left;padding:.5em .8em;}
+  td{background:var(--card);padding:.5em .8em;border-bottom:2px solid var(--bg);
+    vertical-align:top;}
+  .tablewrap{overflow-x:auto;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ===== ヘッダー：何を・なぜ・現況 ===== -->
+  <div class="hero">
+    <h1>Tabane — 音声オーケストレーション</h1>
+    <p>声で指揮役の claude に依頼すると、tabane のペインが増えて子セッションが立ち上がり、勝手に作業して、終わったことが指揮役に返ってくる。実装するのは「ペインを外から操作する口」だけで、耳と指揮は既存のものを組み合わせる。</p>
+    <div class="chips">
+      <span>ステータス：ドラフト（承認待ち）</span>
+      <span>規模：中</span>
+      <span>前提：tabane v0.1.1</span>
+      <span>2026-07-28</span>
+    </div>
+  </div>
+
+  <!-- ===== 1. 目的 ===== -->
+  <div class="card">
+    <h2>1. 目的</h2>
+    <p>Claude Code の音声入力（<code>/voice</code>）は<b>セッション内でしか使えない</b>。既に開いているセッションに向かって喋ることはできるが、そこから新しい作業を起こす手段がない。また、走行中のセッションに外から入力を差し込む公式な口も存在しない。</p>
+    <p>tabane は PTY を直接握っているため、この2つの空白をどちらも埋められる。<b>「ペインを開いて claude を起動しプロンプトを渡す」口を外部に開ければ、声を受けた指揮役の claude が子セッションを生やせる</b>ようになる。</p>
+    <p>実装が必要なのは口だけ。耳は <code>/voice</code>（実装ゼロ）、指揮役は普通の claude ペイン（実装ゼロ）で足りる。あわせて、この口を持つことで返事待ち検知の根拠を「出力の推測」から「エージェント本人の申告」に引き上げられる。<b>これは音声と無関係に tabane 本体の精度向上になる。</b></p>
+  </div>
+
+  <!-- ===== 2. スコープ ===== -->
+  <div class="card">
+    <h2>2. スコープ</h2>
+    <div class="cols">
+      <div class="scope do">
+        <b>やること</b>
+        <ul>
+          <li><code>tabane</code> CLI（<code>open</code> / <code>list</code> / <code>wait</code> / <code>kill</code> / <code>report</code>）</li>
+          <li>main プロセスに Unix domain socket サーバ（双方向）</li>
+          <li>main → renderer の<b>ペイン生成イベント</b>（<code>shared/types.ts</code> に IPC 契約を追加）</li>
+          <li>子起動時の <b>hooks 注入</b>（<code>--settings</code> で子にだけ渡す）</li>
+          <li><b>エージェント状態</b>（<code>running</code> / <code>done</code> / <code>needs_input</code>）をペイン状態とは別に保持</li>
+          <li>権限モード指定（<code>strict</code> / <code>edit</code> / <code>yolo</code>、既定 <code>strict</code>）</li>
+          <li>同時ペイン数の上限と、全ペイン緊急停止</li>
+          <li>CLI をパスに通すメニュー項目（VS Code の <code>code</code> コマンド方式）</li>
+        </ul>
+      </div>
+      <div class="scope dont">
+        <b>やらないこと</b>
+        <ul>
+          <li><b>読み上げ（TTS）</b>。Claude Code に機能がなく、マイクが拾う echo 問題も出る</li>
+          <li><b>LLM に走行中の TUI をキー操作させる</b>。再描画・タイミング・権限プロンプトで事故る</li>
+          <li>音声での権限承認（誤爆の代償が大きい）</li>
+          <li>音声認識の自前実装。<code>/voice</code> を使う（動かないと判明した場合のみ再検討）</li>
+          <li>MCP サーバ化。socket プロトコルを共通土台にしておき、必要になってから薄く被せる</li>
+          <li>リモート / SSH 対応。<code>/voice</code> がリモート非対応と明言されている</li>
+          <li>指揮役 claude の常駐・自動起動。ペインを人間が立てて役割を与えるだけ</li>
+        </ul>
+      </div>
+    </div>
+    <div class="why">
+      <b>why:</b> 3層（耳 / ペイン操作 / 指揮）のうち、耳と指揮は既存機能の組み合わせで手に入る。<b>実装が必要なのは中央の1層だけ</b>という分解が本仕様の骨子。「音声専用セッション」のような特別なモードは作らない（コードが増えて得るものがない）。
+    </div>
+  </div>
+
+  <!-- ===== 3. 処理フロー ===== -->
+  <div class="card">
+    <h2>3. 処理フロー</h2>
+    <div class="flow">
+      <span>指揮役ペインで <code>/voice</code></span><i>→</i>
+      <span>声で依頼</span><i>→</i>
+      <span>指揮役が <code>tabane open</code></span><i>→</i>
+      <span>socket → main</span><i>→</i>
+      <span>renderer がペイン追加</span><i>→</i>
+      <span>子 claude 起動（hooks 付き）</span><i>→</i>
+      <span>作業</span><i>→</i>
+      <span>Stop hook → <code>tabane report</code></span><i>→</i>
+      <span>状態確定</span><i>→</i>
+      <span><code>tabane wait</code> が返る</span><i>→</i>
+      <span>指揮役が結果を報告</span>
+    </div>
+    <div class="why">
+      <b>why:</b> 指揮役はターン制なので、子の完了に自分で気づけない。ポーリングだと人間が毎回尋ねる必要があり、PTY への割り込み通知だと人間の入力中にも刺さって暴走の停止が難しくなる。<b>指揮役が自分のターンの中でブロックして待つ</b><code>wait</code> なら、割り込みを起こさずに「3つ投げて全部終わるまで待つ」が自然に書ける。
+    </div>
+
+    <h3>指揮役ペインの置き場所</h3>
+    <p>指揮役は <code>~/develop</code>（アンブレラフォルダ）で起動する。子ペインの cwd はそれぞれ独立しているため、<b>1枚の指揮役に対して別プロジェクトの子を並べる</b>のが主な使い方になる。</p>
+    <pre><i>ID  TITLE      CWD</i>
+1   指揮        ~/develop            <b>← ここに喋る</b>
+2   記事修正    ~/develop/yuki-home
+3   ツール改修  ~/develop/yuki-tools
+4   配信まわり  ~/develop/SparkCast</pre>
+    <div class="why">
+      <b>why:</b> 理由は2つ。①「yuki-home の記事を直して」から <code>--cwd</code> を導くには、指揮役がプロジェクトの所在を知っている必要がある。<code>~/develop/CLAUDE.md</code> にリポジトリ一覧の表が既にあるため、そこで起動すればプロジェクト辞書として機能し、<b>tabane 側に一覧取得コマンドを作らずに済む</b>。②特定リポジトリ内で起動すると、そのリポの <code>CLAUDE.md</code> を読み込んで文脈を背負ってしまう。指揮役は横断役なのでどのリポにも属さない方がよい。これは <code>~/develop/CLAUDE.md</code> の「横断作業はアンブレラで起動する」という既存ルールとも一致する。
+    </div>
+  </div>
+
+  <!-- ===== 4. アプローチ案 ===== -->
+  <div class="card">
+    <h2>4. アプローチ案</h2>
+
+    <h3>4-1. ペインを操作する口の形</h3>
+    <div class="tablewrap">
+    <table>
+      <tr><th>案</th><th>内容</th><th>トレードオフ</th><th>採否</th></tr>
+      <tr><td>A</td><td>CLI + Unix domain socket（双方向）</td><td>結果を返せるので <code>list</code> / <code>wait</code> が成立する。権限は <code>Bash(tabane:*)</code> の allowlist 一発。人間もシェルから同じコマンドを使えるのでデバッグしやすい</td><td><b>採用</b></td></tr>
+      <tr><td>B</td><td>Electron の second-instance（アプリを引数付きで起動し既存インスタンスにイベントを飛ばす）</td><td>実装は最小だが<b>一方向</b>で結果を返せず、<code>list</code> / <code>wait</code> が作れない。毎回 Electron 起動で 0.3〜1 秒かかる</td><td>—</td></tr>
+      <tr><td>C</td><td>MCP サーバとして tabane を公開</td><td>型付きツールとして見えるのが利点。ただし実体は同じ socket に行き着くため、CLI の上に後から被せられる。今作る必然がない</td><td>将来拡張</td></tr>
+      <tr><td>D</td><td>ファイル / ディレクトリ監視によるコマンドキュー</td><td>結果が返せない、レース、ゴミ掃除、watcher が必要。socket より楽な点がない</td><td>—</td></tr>
+    </table>
+    </div>
+
+    <h3>4-2. エージェント状態の作り方</h3>
+    <div class="tablewrap">
+    <table>
+      <tr><th>案</th><th>内容</th><th>トレードオフ</th><th>採否</th></tr>
+      <tr><td>A</td><td>hooks で子に申告させ、<b>ペイン状態と別軸で保持</b></td><td>推測でなく事実。「完了」と「暇」を区別できる。人間が見る glow も同時に正確になる。素のシェルや hooks を持たない CLI は従来の BEL 検知のまま動く</td><td><b>採用</b></td></tr>
+      <tr><td>B</td><td>既存の <code>idle</code> / <code>busy</code> / <code>waiting</code> をそのまま CLI で見せる</td><td>実装は最小。ただし長考中の claude が <code>idle</code> に落ち、完了と暇が区別できない。指揮役が誤った状態を読んで次を投げる事故が起きる</td><td>—</td></tr>
+      <tr><td>C</td><td>BEL / OSC の推測をやめ、hooks の申告だけを根拠にする</td><td>状態は最も正確になるが、claude 以外を動かしているペインが一切光らなくなる。tabane が「claude 専用端末」に狭まる</td><td>—</td></tr>
+    </table>
+    </div>
+    <div class="warn">
+      <b>注意:</b> hooks はユーザーのリポジトリの <code>.claude/settings.json</code> を<b>書き換えない</b>。子プロセスにだけ <code>--settings</code> で渡す。プロジェクト設定を汚すと tabane 外の作業にも漏れる。
+    </div>
+
+    <h3>4-3. 子の完了を指揮役に伝える方法</h3>
+    <div class="tablewrap">
+    <table>
+      <tr><th>案</th><th>内容</th><th>トレードオフ</th><th>採否</th></tr>
+      <tr><td>A</td><td>ブロッキング <code>tabane wait</code></td><td>指揮役が自分のターン内で待つため割り込みが起きない。複数ペインの待ち合わせが自然に書ける。Bash の実行時間上限があるためタイムアウト指定が必須</td><td><b>採用</b></td></tr>
+      <tr><td>B</td><td>ポーリング（人間が尋ねたときだけ <code>list</code>）</td><td>実装最小で予期しない動きをしない。ただし「終わったら次をやっておいて」が成立しない</td><td>補助として併存（<code>list</code> は実装する）</td></tr>
+      <tr><td>C</td><td>PTY プッシュ（tabane が指揮役ペインに書き込んで Enter）</td><td>最も Live らしいが、人間の入力中にも刺さる。連鎖して勝手に増殖したとき止めにくい</td><td>—</td></tr>
+    </table>
+    </div>
+  </div>
+
+  <!-- ===== 5. コマンド仕様 ===== -->
+  <div class="card">
+    <h2>5. コマンド仕様</h2>
+
+    <h3>tabane open</h3>
+    <p>ペインを1枚追加し、指定 cwd で claude を起動してプロンプトを渡す。プロンプトは<b>起動引数として渡す</b>（起動後の TUI へ流し込むのはタイミング依存で脆いため）。</p>
+    <pre>$ tabane open --cwd ~/develop/yuki-home \
+             --prompt "記事の下書きを直して" \
+             --title "記事修正" \
+             --permission edit
+<b>pane 3</b></pre>
+    <ul>
+      <li><code>--cwd</code> … 必須。存在しなければエラー</li>
+      <li><code>--prompt</code> … 省略時は claude を起動せずシェルだけ開く</li>
+      <li><code>--title</code> … ペインのタイトルバーに出す名札。省略時は cwd のベース名</li>
+      <li><code>--permission</code> … <code>strict</code>（既定） / <code>edit</code> / <code>yolo</code></li>
+      <li>同時ペイン数が上限に達している場合はエラーを返し、ペインを作らない</li>
+    </ul>
+
+    <h3>tabane list</h3>
+    <p>全ペインの状態を返す。<code>--json</code> で機械可読。</p>
+    <pre>$ tabane list
+<i>ID  TITLE      CWD                     AGENT        PANE</i>
+1   指揮        ~/develop               -            idle
+2   記事修正    ~/develop/yuki-home     <b>done</b>         idle
+3   ツール改修  ~/develop/yuki-tools    <b>running</b>      busy
+4   配信まわり  ~/develop/SparkCast     <b>needs_input</b>  waiting</pre>
+    <ul>
+      <li><b>AGENT</b> … hooks で申告されたエージェント状態。claude 以外を動かしているペインは <code>-</code></li>
+      <li><b>PANE</b> … 従来どおり PTY 出力から推測するペイン状態。人間が見る glow の根拠</li>
+      <li>子ペインの cwd は<b>それぞれ独立</b>。1枚の指揮役に対して、別プロジェクトの子を並べるのが主用途</li>
+    </ul>
+
+    <h3>tabane wait</h3>
+    <p>指定ペインが <code>done</code> または <code>needs_input</code> になるまでブロックする。複数指定すると全部が決着するまで待つ。</p>
+    <pre>$ tabane wait 2 3 4 --timeout 600
+<b>pane 2 done</b>
+<b>pane 4 needs_input</b>
+<b>pane 3 done</b></pre>
+    <ul>
+      <li><code>--timeout</code> … 秒。既定値は残論点。切れた場合は<b>エラーではなく現在の状態を返して正常終了</b>する（「まだ走っている」も情報のため）</li>
+      <li>対象ペインが途中で閉じられた場合は <code>closed</code> として返す</li>
+    </ul>
+
+    <h3>tabane kill</h3>
+    <p>ペインを閉じる。<code>--all</code> で全ペインを停止（緊急停止）。</p>
+    <div class="warn">
+      <b>注意:</b> 緊急停止は<b>指揮役 LLM を経由しない経路</b>も必ず持つ（アプリのメニュー / ホットキー）。指揮役が詰まっているときに止められないのが最悪のパターンのため。
+    </div>
+
+    <h3>tabane report</h3>
+    <p>hooks から呼ばれる内部向けコマンド。人間や指揮役が直接使うことは想定しない。</p>
+    <pre>$ tabane report --pane $TABANE_PANE_ID --state done</pre>
+    <ul>
+      <li>ペイン ID は PTY 起動時に環境変数 <code>TABANE_PANE_ID</code> として渡す（<code>ptyManager.ts</code> の env 組み立てに追加）</li>
+      <li>Stop hook → <code>done</code> / Notification hook → <code>needs_input</code> / 起動直後 → <code>running</code></li>
+    </ul>
+  </div>
+
+  <!-- ===== 6. 変更対象ファイル ===== -->
+  <div class="card">
+    <h2>6. 変更対象ファイル</h2>
+    <ul>
+      <li><code>src/main/socketServer.ts</code>（新規）— Unix domain socket の listen とコマンド処理</li>
+      <li><code>src/main/agentState.ts</code>（新規）— エージェント状態の保持と <code>wait</code> の待ち合わせ</li>
+      <li><code>src/main/ptyManager.ts</code> — env に <code>TABANE_PANE_ID</code> を追加。起動コマンドと権限モードを受け取れるよう <code>create()</code> を拡張</li>
+      <li><code>src/main/index.ts</code> — socket サーバの起動/終了、renderer へのペイン生成イベント送出</li>
+      <li><code>src/shared/types.ts</code> — <b>IPC 契約の追加</b>。main → renderer のペイン生成要求、エージェント状態のイベント</li>
+      <li><code>src/renderer/src/App.tsx</code> — 生成要求を受けて layout 木にペインを追加（<code>handleSplit</code> の経路を再利用）</li>
+      <li><code>src/main/menu.ts</code> — 「<code>tabane</code> コマンドをパスにインストール」「全ペイン停止」を追加</li>
+      <li><code>bin/tabane</code>（新規）— socket に繋ぐだけの薄いクライアント</li>
+    </ul>
+    <div class="why">
+      <b>why:</b> ペインを増やす処理自体は <code>App.tsx</code> に既にある（分割ボタンの経路）。今回足すのは「socket から来たときにも同じ処理を呼べるようにする」入口だけで、レイアウト木の操作ロジックには触らない。
+    </div>
+  </div>
+
+  <!-- ===== 7. 残論点 ===== -->
+  <div class="card">
+    <h2>7. 残論点 / 合意メモ</h2>
+    <h3>決定事項</h3>
+    <ul>
+      <li>決定：口は CLI + Unix domain socket（双方向）。MCP は将来拡張として socket の上に被せる</li>
+      <li>決定：状態は2階建て。ペイン状態（既存の推測）とエージェント状態（hooks の申告）を別軸で持つ</li>
+      <li>決定：完了通知はブロッキング <code>wait</code>。PTY への割り込み通知は採用しない</li>
+      <li>決定：権限は <code>--permission</code> で選択、既定は <code>strict</code>。危険側には必ず人間の意思が一度入る</li>
+      <li>決定：耳は <code>/voice</code> を使い、音声認識は自前実装しない</li>
+    </ul>
+    <h3>未決</h3>
+    <ul>
+      <li><b>最重要・実測待ち：</b><code>/voice</code> が tabane の PTY 内で動作するか。ドキュメントに記載がなく、リモート環境は非対応と明言されている。ローカルの node-pty については未記載のため実機確認が必要。<code>tap</code> モードの方が安定する見込み（<code>hold</code> は Space のキーリピート検出に依存するため xterm.js 越しで化ける可能性）</li>
+      <li><b>マイク権限：</b>現在の <code>electron-builder.yml</code> に <code>NSMicrophoneUsageDescription</code> の宣言がない。加えて <code>identity: null</code>（無署名）のため、TCC の権限がビルドごとに揮発する懸念がある。上記実測の結果しだいで対応方針を決める</li>
+      <li>同時ペイン数の上限（具体的な数字）</li>
+      <li><code>wait --timeout</code> の既定値。claude 側の Bash 実行時間上限との兼ね合いで決める</li>
+      <li>socket のパス。<code>userData</code> 配下に置く想定だが、多重起動時の扱いを決める必要がある</li>
+      <li><code>yolo</code>（全権限許可）を仕様として持つか、危険すぎるとして落とすか。持つ場合も声で明示したときだけに限定する</li>
+      <li>上記の <code>/voice</code> 実測が NG だった場合の代替（tabane 側でマイクを取得し <code>writePty</code> で流す）。その場合は音声認識の実装方式が新たな論点になる</li>
+    </ul>
+  </div>
+
+</div>
+</body>
+</html>
