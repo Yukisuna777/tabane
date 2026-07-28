@@ -1,0 +1,224 @@
+#!/usr/bin/env node
+// tabane CLI — 起動中の tabane.app に socket 経由でコマンドを送る薄いクライアント。
+//
+// PTY の中で動く claude は Electron の IPC に触れないため、コマンドの形で口を開ける。
+// 人間がシェルから直接叩いても同じように動く（デバッグと日常使いを兼ねる）。
+//
+// プロトコルは JSON Lines。1リクエストにつき1レスポンスを受けて終わる。
+// 型の定義は src/shared/types.ts（このスクリプトはビルド対象外なので import はしない）。
+
+import net from 'node:net'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
+
+const USAGE = `tabane — 起動中の tabane を操作する
+
+  tabane open --cwd <path> [--prompt <text>] [--title <name>] [--permission strict|edit|yolo]
+  tabane list [--json]
+  tabane wait <pane...> [--timeout <sec>]
+  tabane kill <pane...> | tabane kill --all
+  tabane report --pane <n> --state running|done|needs_input   (hooks 用)
+`
+
+/** userData 配下の socket。Electron の app.getPath('userData') と同じ場所を指す。 */
+function socketPath() {
+  if (process.env.TABANE_SOCK) return process.env.TABANE_SOCK
+  const name = 'tabane'
+  if (process.platform === 'darwin') {
+    return join(homedir(), 'Library', 'Application Support', name, 'tabane.sock')
+  }
+  if (process.platform === 'win32') {
+    return join(process.env.APPDATA || join(homedir(), 'AppData', 'Roaming'), name, 'tabane.sock')
+  }
+  return join(process.env.XDG_CONFIG_HOME || join(homedir(), '.config'), name, 'tabane.sock')
+}
+
+/** 素朴な引数パース。--key value と --flag、および位置引数を拾う。 */
+function parseArgs(argv) {
+  const opts = {}
+  const positional = []
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i]
+    if (!a.startsWith('--')) {
+      positional.push(a)
+      continue
+    }
+    const key = a.slice(2)
+    const next = argv[i + 1]
+    if (next === undefined || next.startsWith('--')) {
+      opts[key] = true
+    } else {
+      opts[key] = next
+      i++
+    }
+  }
+  return { opts, positional }
+}
+
+function fail(message) {
+  process.stderr.write(message + '\n')
+  process.exit(1)
+}
+
+/** ペイン番号の配列に変換する。数値でないものが混ざればエラー。 */
+function toPanes(list) {
+  return list.map((v) => {
+    const n = Number(v)
+    if (!Number.isInteger(n) || n <= 0) fail(`ペイン番号が不正: ${v}`)
+    return n
+  })
+}
+
+/** socket に1リクエスト送り、1レスポンスを受け取る。 */
+function send(request) {
+  return new Promise((resolve, reject) => {
+    const sock = net.createConnection(socketPath())
+    let buf = ''
+    let settled = false
+
+    const done = (fn, arg) => {
+      if (settled) return
+      settled = true
+      fn(arg)
+    }
+
+    sock.on('connect', () => sock.write(JSON.stringify(request) + '\n'))
+
+    sock.on('data', (chunk) => {
+      buf += chunk.toString('utf8')
+      const idx = buf.indexOf('\n')
+      if (idx < 0) return
+      const line = buf.slice(0, idx)
+      sock.end()
+      try {
+        done(resolve, JSON.parse(line))
+      } catch {
+        done(reject, new Error('レスポンスを解釈できなかった'))
+      }
+    })
+
+    sock.on('error', (e) => {
+      done(
+        reject,
+        e.code === 'ENOENT' || e.code === 'ECONNREFUSED'
+          ? new Error('tabane が起動していません')
+          : e
+      )
+    })
+
+    // レスポンスを受ける前に切られた場合だけエラーにする。
+    // wait は長時間ブロックするため、クライアント側でタイムアウトは張らない。
+    sock.on('close', () => done(reject, new Error('レスポンスを受け取る前に接続が閉じられた')))
+  })
+}
+
+// ---- 表示 ----
+
+/** 全角を2幅として数える（list の桁揃え用）。 */
+function width(s) {
+  let n = 0
+  for (const ch of String(s)) {
+    n += /[ᄀ-ᅟ⺀-꓏가-힣豈-﫿︰-﹯＀-｠￠-￦]/.test(ch)
+      ? 2
+      : 1
+  }
+  return n
+}
+
+function pad(s, to) {
+  return String(s) + ' '.repeat(Math.max(0, to - width(s)))
+}
+
+function printList(panes) {
+  if (panes.length === 0) {
+    process.stdout.write('(ペインなし)\n')
+    return
+  }
+  const rows = panes.map((p) => [String(p.id), p.title, p.cwd, p.agent ?? '-', p.pane])
+  const head = ['ID', 'TITLE', 'CWD', 'AGENT', 'PANE']
+  const widths = head.map((h, i) =>
+    Math.max(width(h), ...rows.map((r) => width(r[i])))
+  )
+  const line = (cells) => cells.map((c, i) => pad(c, widths[i])).join('  ').trimEnd()
+  process.stdout.write(line(head) + '\n')
+  for (const r of rows) process.stdout.write(line(r) + '\n')
+}
+
+// ---- 各コマンド ----
+
+async function main() {
+  const [cmd, ...rest] = process.argv.slice(2)
+  if (!cmd || cmd === '--help' || cmd === '-h') {
+    process.stdout.write(USAGE)
+    return
+  }
+
+  const { opts, positional } = parseArgs(rest)
+
+  switch (cmd) {
+    case 'open': {
+      if (typeof opts.cwd !== 'string') fail('--cwd は必須')
+      const res = await send({
+        cmd: 'open',
+        cwd: opts.cwd,
+        prompt: typeof opts.prompt === 'string' ? opts.prompt : undefined,
+        title: typeof opts.title === 'string' ? opts.title : undefined,
+        permission: typeof opts.permission === 'string' ? opts.permission : undefined
+      })
+      if (!res.ok) fail(res.error)
+      process.stdout.write(`pane ${res.data.id}\n`)
+      return
+    }
+
+    case 'list': {
+      const res = await send({ cmd: 'list' })
+      if (!res.ok) fail(res.error)
+      if (opts.json) process.stdout.write(JSON.stringify(res.data.panes, null, 2) + '\n')
+      else printList(res.data.panes)
+      return
+    }
+
+    case 'wait': {
+      const panes = toPanes(positional)
+      if (panes.length === 0) fail('待つペイン番号を指定して')
+      const res = await send({
+        cmd: 'wait',
+        panes,
+        timeout: opts.timeout ? Number(opts.timeout) : undefined
+      })
+      if (!res.ok) fail(res.error)
+      // 決着した順に並んでいる（main 側で完了順を保持している）
+      for (const r of res.data.results) {
+        process.stdout.write(`pane ${r.id} ${r.state}\n`)
+      }
+      return
+    }
+
+    case 'kill': {
+      const panes = toPanes(positional)
+      if (!opts.all && panes.length === 0) fail('ペイン番号か --all を指定して')
+      const res = await send({ cmd: 'kill', panes, all: !!opts.all })
+      if (!res.ok) fail(res.error)
+      process.stdout.write(`killed ${res.data.killed}\n`)
+      return
+    }
+
+    case 'report': {
+      // hooks から呼ばれる。tabane が落ちていても子の claude を巻き込まないよう、
+      // 失敗しても常に成功終了する（ここでエラーを返すと hook がエラー扱いになる）。
+      const pane = Number(opts.pane)
+      if (!Number.isInteger(pane) || typeof opts.state !== 'string') return
+      try {
+        await send({ cmd: 'report', pane, state: opts.state })
+      } catch {
+        // 握りつぶす
+      }
+      return
+    }
+
+    default:
+      fail(`不明なコマンド: ${cmd}\n\n${USAGE}`)
+  }
+}
+
+main().catch((e) => fail(e.message))
