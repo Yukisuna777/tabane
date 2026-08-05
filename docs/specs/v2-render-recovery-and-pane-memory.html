@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<!--
+  Tabane v2 仕様書 — 長時間起動の文字化け修正 / ペインごとの状態記憶
+  （yukisuna-brand/flow/templates/spec.html 派生）
+  原則：実装に入る前に承認する。承認まで実装は始めない（仕様 = 人間と AI の契約書）。
+-->
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>仕様書 — Tabane 文字化け修正 / ペイン状態記憶</title>
+<style>
+  :root{
+    --ink:#1f2a26; --muted:#5b6b64; --bg:#f4f8f6; --card:#fff;
+    --accent:#0f9d6b; --accent-deep:#0a7350; --accent-bg:#e6f5ee;
+    --do-bg:#e6f5ee; --do:#0a7350; --dont-bg:#fdeaef; --dont:#be123c;
+    --shadow:0 2px 10px rgba(15,60,45,.08),0 1px 3px rgba(15,60,45,.06);
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{font-family:"Hiragino Sans","Noto Sans JP","Yu Gothic",sans-serif;
+    background:var(--bg);color:var(--ink);line-height:1.7;padding:2.5rem 1rem;}
+  .wrap{max-width:880px;margin:0 auto;display:flex;flex-direction:column;gap:1.4rem;}
+  code{font-family:ui-monospace,Consolas,monospace;background:var(--accent-bg);
+    color:var(--accent-deep);padding:.08em .4em;border-radius:.3em;font-size:.92em;}
+  .hero{background:linear-gradient(120deg,var(--accent-deep),var(--accent));
+    color:#fff;border-radius:.9rem;padding:1.4rem 1.6rem;box-shadow:var(--shadow);}
+  .hero h1{font-size:1.5rem;font-weight:800;}
+  .hero p{color:#d2f0e2;margin:.4rem 0 .8rem;font-size:.95rem;}
+  .chips{display:flex;gap:.4rem;flex-wrap:wrap;}
+  .chips span{background:rgba(255,255,255,.18);border-radius:99em;
+    padding:.15em .9em;font-size:.78rem;font-weight:700;}
+  .card{background:var(--card);border-radius:.8rem;box-shadow:var(--shadow);
+    padding:1.1rem 1.4rem;}
+  .card h2{font-size:1.1rem;font-weight:800;margin-bottom:.7rem;
+    color:var(--accent-deep);}
+  .card h3{font-size:.98rem;font-weight:800;margin:.9rem 0 .4rem;}
+  ul{list-style:none;} li{padding-left:1.3em;position:relative;margin-bottom:.4em;}
+  li::before{content:"●";position:absolute;left:.1em;top:.05em;
+    color:var(--accent);font-size:.65em;}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:1rem;}
+  .scope{border-radius:.6rem;padding:.8rem 1rem;font-size:.92rem;}
+  .scope.do{background:var(--do-bg);color:var(--do);}
+  .scope.dont{background:var(--dont-bg);color:var(--dont);}
+  .scope b{display:block;margin-bottom:.4rem;font-size:.95rem;}
+  .flow{display:flex;gap:.4rem;align-items:center;flex-wrap:wrap;}
+  .flow span{background:var(--accent-bg);color:var(--accent-deep);
+    border-radius:.4rem;padding:.25em .7em;font-size:.85rem;font-weight:700;}
+  .flow i{color:var(--accent);font-style:normal;}
+  .why{background:var(--accent-bg);color:var(--accent-deep);
+    border-radius:.6rem;padding:.7rem 1rem;font-size:.9rem;}
+  .why b{font-weight:800;}
+  table{border-collapse:collapse;width:100%;font-size:.9rem;}
+  th{background:var(--accent);color:#fff;text-align:left;padding:.5em .8em;}
+  td{background:var(--card);padding:.5em .8em;border-bottom:2px solid var(--bg);}
+  pre{background:#0f1a16;color:#d7e8e0;border-radius:.5rem;padding:.8rem 1rem;
+    overflow-x:auto;font-family:ui-monospace,Consolas,monospace;font-size:.83rem;
+    line-height:1.6;margin:.5rem 0;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ===== ヘッダー ===== -->
+  <div class="hero">
+    <h1>Tabane v2 — 文字化け修正 / ペインごとの状態記憶</h1>
+    <p>長時間起動すると全ペインが文字化けして読めなくなる不具合の修正と、ペインごとに「最後にいたフォルダ」「最後に見た Claude Code の resume コード」を覚えて再起動後に引き継ぐ機能。</p>
+    <div class="chips">
+      <span>ステータス：ドラフト（承認待ち）</span>
+      <span>規模：中</span>
+      <span>対象：既存リポ v0.1.1</span>
+      <span>2026-08-05</span>
+    </div>
+  </div>
+
+  <!-- ===== 1. 目的 ===== -->
+  <div class="card">
+    <h2>1. 目的</h2>
+    <p><b>A：文字化け（バグ）</b> — 数時間〜一晩置くと全ペインのテキストが別グリフに化け、スクロールバックごと読めなくなる。監督用ターミナルとして致命的（見張るための画面が見えない）。原因は特定済みで、xterm.js が公式に必須としているハンドリング漏れ。</p>
+    <p style="margin-top:.5rem;"><b>B：ペインの状態記憶（機能）</b> — レイアウトとタイトルは復元されるのに、シェルは毎回ホーム（または起動フォルダ）から始まり、Claude Code のセッションも辿れない。ペインの名札に対応する<b>作業文脈</b>（どこで・何の続きを）まで復元して、再起動のコストを消す。</p>
+  </div>
+
+  <!-- ===== 2. 原因分析（A） ===== -->
+  <div class="card">
+    <h2>2. 原因分析 — なぜ長時間で化けるのか</h2>
+    <p><code>terminalRegistry.ts:155-159</code> で <code>WebglAddon</code> を読み込んでいるが、<b><code>onContextLoss</code> を購読していない</b>。これが直接の原因。</p>
+    <ul>
+      <li><b>WebGL コンテキストの喪失が復旧されない。</b> OS スリープ復帰・GPU プロセスのクラッシュ／再起動・ディスプレイ切替でコンテキストは失われる。xterm.js のドキュメントは「<code>onContextLoss</code> で addon を <code>dispose()</code> すること」を必須手順として明記している。購読していない現状では、死んだコンテキストに描き続け、画面はゴミのまま固定される。</li>
+      <li><b>テクスチャアトラスの破損。</b> xterm.js の型定義自身が <code>clearTextureAtlas()</code> の説明で「Chromium/Nvidia には OS スリープ復帰時にテクスチャが壊れる問題がある」と、まさにこの症状を書いている。グリフはアトラス（GPU 上のグリフ表）から座標参照で描かれるので、アトラスがずれると<b>「別の文字に化ける」</b>。スクショの症状（既に描画済みの行まで化け、直近の ASCII 行だけ正常）はこの座標ずれの典型。</li>
+      <li><b>全ペインが同時に化ける理由。</b> アトラスは「同一フォント設定の端末間で共有」される。1枚壊れると共有している全ペインが道連れになる。スクショで7ペインすべてが化けているのはこれで説明がつく。</li>
+      <li><b>長時間ほど起きやすい理由。</b> ①スリープ／ディスプレイ切替に遭遇する確率が上がる ②日本語・Powerline・罫線と使用グリフ種が増えアトラスのページが膨らむ ③分割とクローズを繰り返すぶん WebGL コンテキストが作られ、Chromium の上限（1レンダラあたり16前後）に触れると古いものから強制的に失われる。すべて「復旧経路が無い」という一点に収束する。</li>
+    </ul>
+    <div class="why" style="margin-top:.9rem;">
+      <b>why:</b> つまり「化けないようにする」のではなく <b>「化けたら必ず直る経路を作る」</b> のが正解。GPU コンテキストの喪失もアトラス破損も外部要因（OS・ドライバ）で必ず起きうるもので、こちらから防ぎきることはできない。復旧が自動で走れば、ユーザーから見た不具合は消える。
+    </div>
+  </div>
+
+  <!-- ===== 3. スコープ ===== -->
+  <div class="card">
+    <h2>3. スコープ</h2>
+    <div class="cols">
+      <div class="scope do">
+        <b>やること</b>
+        <ul>
+          <li>A-1：<code>onContextLoss</code> を購読し、addon 破棄 → 張り直し（上限つき、最終的に DOM レンダラへ縮退）</li>
+          <li>A-2：復旧の自動トリガ（ウィンドウ復帰・DPR 変化）で全端末のアトラスを <code>clearTextureAtlas()</code></li>
+          <li>A-3：手動復旧「表示 &gt; 画面を再描画」（<code>Cmd+Shift+R</code>）— 保険として残す</li>
+          <li>B-1：ペインごとの cwd 追跡（OSC 7 一次 + lsof ポーリング二次）と復元</li>
+          <li>B-2：PTY 出力から <code>claude --resume &lt;uuid&gt;</code> を検出して記憶</li>
+          <li>B-3：タイトルバーの resume チップ（クリックでコマンドを<b>入力するだけ</b>）</li>
+        </ul>
+      </div>
+      <div class="scope dont">
+        <b>やらないこと</b>
+        <ul>
+          <li>PTY / シェルセッションそのものの復元（プロセスは復元しない。cwd と入力補助まで）</li>
+          <li>スクロールバックの永続化（別件・容量が読めない）</li>
+          <li><code>claude --resume</code> の<b>自動実行</b>（暴発が怖い。改行は送らない）</li>
+          <li>シェル履歴・環境変数の復元</li>
+          <li>WebGL をやめて DOM レンダラ固定にする（描画性能が落ちる。縮退先としてのみ使う）</li>
+          <li>codex 以外のエージェント固有 ID の対応（正規表現の追加で足りるので後追いでよい）</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 4. アプローチ案（A） ===== -->
+  <div class="card">
+    <h2>4. アプローチ案 — 文字化けの直し方</h2>
+    <table>
+      <tr><th>案</th><th>内容</th><th>トレードオフ</th><th>採否</th></tr>
+      <tr><td>A</td><td><code>onContextLoss</code> で張り直し ＋ 復帰時アトラスクリア ＋ 手動再描画</td><td>公式手順どおり。原因3系統（コンテキスト喪失・アトラス破損・上限超え）を全部拾える。追加依存なし</td><td><b>推奨</b></td></tr>
+      <tr><td>B</td><td>WebGL をやめて DOM レンダラ固定</td><td>絶対に化けないが、多ペイン × 大量出力で描画が重くなる。tabane の用途（複数エージェント同時監視）と相性が悪い</td><td>—（A の縮退先としてのみ）</td></tr>
+      <tr><td>C</td><td><code>@xterm/addon-canvas</code> を挟んで3段フォールバック</td><td>依存が1つ増える。canvas レンダラも同じアトラス破損を持つので、根本対策にはならない</td><td>見送り</td></tr>
+      <tr><td>D</td><td>一定時間ごとに予防的にアトラスをクリア</td><td>破損前に自動で戻せるが、再ラスタライズのわずかなカクつきが定期的に入る。A で足りるなら不要</td><td>保留（A で残るようなら追加）</td></tr>
+    </table>
+
+    <h3>採用案の実装イメージ</h3>
+    <pre>// terminalRegistry.ts — WebGL は「壊れる前提」で張る
+function loadWebgl(session: TermSession, attempt = 0): void {
+  if (attempt &gt; WEBGL_MAX_RETRY) return  // 諦めて DOM レンダラで走り続ける
+  try {
+    const addon = new WebglAddon()
+    addon.onContextLoss(() =&gt; {
+      addon.dispose()                       // 死んだコンテキストに描き続けさせない
+      setTimeout(() =&gt; loadWebgl(session, attempt + 1), WEBGL_RELOAD_MS)
+    })
+    session.term.loadAddon(addon)
+    session.webgl = addon
+  } catch {
+    // WebGL 不可の環境では DOM レンダラのまま
+  }
+}
+
+/** 全端末のグリフキャッシュを捨てて描き直す（＝化けの手動/自動リセット）。 */
+export function redrawAllTerminals(): void {
+  for (const s of sessions.values()) s.term.clearTextureAtlas()
+}</pre>
+    <p style="font-size:.9rem;color:var(--muted);">自動トリガは renderer 側に置く：<code>window.focus</code> / <code>visibilitychange</code>（スリープ・アプリ復帰）と、<code>matchMedia(`(resolution: ${devicePixelRatio}dppx)`)</code> の変化（外部ディスプレイ移動）。どちらも「化けが起きる瞬間」そのもので、ここでクリアすればユーザーは破損に気づかない。</p>
+  </div>
+
+  <!-- ===== 5. 設計（B） ===== -->
+  <div class="card">
+    <h2>5. 設計 — ペインごとの状態記憶</h2>
+
+    <h3>5.1 保存先</h3>
+    <p>既存のレイアウト永続化にそのまま乗せる。<code>PaneNode</code> に2フィールド追加するだけで、<code>config.json</code> への保存・復元・debounce は既存経路を再利用できる。</p>
+    <pre>export interface PaneNode {
+  kind: 'pane'
+  id: string
+  title: string
+  inheritCwdFromPtyId?: string
+  /** 最後に観測した cwd。次回起動時の spawn cwd に使う。 */
+  lastCwd?: string
+  /** 最後に観測した再開コマンド（例 claude --resume &lt;uuid&gt;）。 */
+  lastResume?: string
+}</pre>
+
+    <h3>5.2 cwd の追跡（2段構え）</h3>
+    <ul>
+      <li><b>一次：OSC 7</b>（<code>ESC]7;file://host/path BEL</code>）。starship / oh-my-zsh 等を使っていればシェルが毎プロンプトで正確に報告してくれる。<code>ptyManager</code> の出力ハンドラで拾うだけなので追加コストはゼロ。</li>
+      <li><b>二次：lsof ポーリング</b>。既存の <code>getCwdOfPid()</code> をそのまま使う。macOS 素の zsh は OSC 7 を出さない（<code>/etc/zshrc</code> の報告は <code>TERM_PROGRAM=Apple_Terminal</code> 限定）ため、こちらが本命になる人も多い。<b>出力があったセッションだけ</b>を10秒間隔で引く（dirty フラグ方式）。暇なペインでは <code>lsof</code> を起動しない。</li>
+      <li>変化したときだけ <code>pty:cwd</code> を renderer に送る → <code>PaneNode.lastCwd</code> を更新 → 既存の debounce 保存に乗る。</li>
+    </ul>
+
+    <h3>5.3 resume コードの検出</h3>
+    <p>Claude Code は終了時に次を出力する：</p>
+    <pre>Resume this session with:
+claude --resume cb9c8b81-1745-4961-82fa-c9c02be60cf8</pre>
+    <ul>
+      <li>PTY 出力から ANSI を剥がした<b>末尾バッファ（512文字）</b>に対して正規表現をかける。チャンク分割で UUID が割れても拾えるようにするため、バッファ方式は必須。</li>
+      <li>パターン：<code>/claude\s+--resume\s+([0-9a-f-]{36})/i</code>。codex 用に <code>/codex\s+resume\s+(\S+)/i</code> も同居させる（構造は同じなので追加コストなし）。</li>
+      <li>検出したら <code>pty:resume</code> を renderer に送る。<b>最後に見たものだけ</b>を保持（上書き）。</li>
+    </ul>
+
+    <h3>5.4 復元と UI</h3>
+    <ul>
+      <li>起動時、<code>attachTerminal</code> に <code>cwd</code> を渡せるようにして <code>createPty({ cwd: pane.lastCwd })</code> する。消えたディレクトリのフォールバックは <code>ptyManager</code> の既存チェック（<code>existsSync</code>）がすでに面倒を見ている。</li>
+      <li><code>lastResume</code> があるペインは、タイトルバーに小さなチップ <code>⟲ resume</code> を出す。<b>クリックで端末にコマンドを入力するだけ</b>（改行は送らない）。ユーザーが内容を見て Enter する。ホバーで完全な ID をツールチップ表示。</li>
+      <li>チップは新しい resume コードを観測したら黙って差し替わる。明示的な消去 UI は置かない（増やしすぎない）。</li>
+    </ul>
+
+    <div class="why" style="margin-top:.9rem;">
+      <b>why:</b> resume を自動実行しないのは、復元時に7ペインが一斉に Claude Code を起動して課金と混乱を生むのを避けるため。「名札」と同じで、<b>tabane は文脈を提示するだけで、実行はユーザーが決める</b> という一貫した立場を取る。
+    </div>
+  </div>
+
+  <!-- ===== 6. 処理フロー ===== -->
+  <div class="card">
+    <h2>6. 処理フロー</h2>
+    <h3>A：文字化けからの復旧</h3>
+    <div class="flow">
+      <span>スリープ復帰 / GPU クラッシュ</span><i>→</i>
+      <span>コンテキスト喪失 or アトラス破損</span><i>→</i>
+      <span>onContextLoss / focus / DPR 変化を検知</span><i>→</i>
+      <span>addon 破棄 + 張り直し / アトラス clear</span><i>→</i>
+      <span>全グリフ再ラスタライズ</span><i>→</i>
+      <span>正常表示に復帰</span>
+    </div>
+    <h3>B：ペイン状態の記憶と復元</h3>
+    <div class="flow">
+      <span>PTY 出力</span><i>→</i>
+      <span>OSC 7 / lsof で cwd、末尾バッファで resume を観測</span><i>→</i>
+      <span>変化時だけ renderer に通知</span><i>→</i>
+      <span>PaneNode に書いて config.json に保存</span><i>→</i>
+      <span>次回起動でレイアウト復元</span><i>→</i>
+      <span>lastCwd で spawn / resume チップ表示</span>
+    </div>
+  </div>
+
+  <!-- ===== 7. 変更対象ファイル ===== -->
+  <div class="card">
+    <h2>7. 変更対象ファイル</h2>
+    <table>
+      <tr><th>ファイル</th><th>変更内容</th></tr>
+      <tr><td><code>src/renderer/src/terminalRegistry.ts</code></td><td>WebglAddon の onContextLoss ハンドリングと張り直し、<code>redrawAllTerminals()</code>、attach 時の cwd 受け渡し</td></tr>
+      <tr><td><code>src/renderer/src/App.tsx</code></td><td>復旧の自動トリガ（focus / visibilitychange / DPR）購読、cwd・resume イベントを PaneNode に反映</td></tr>
+      <tr><td><code>src/renderer/src/layout.ts</code></td><td><code>PaneNode</code> に <code>lastCwd</code> / <code>lastResume</code>、更新用の純粋関数</td></tr>
+      <tr><td><code>src/renderer/src/components/TitleBar.tsx</code></td><td>resume チップの表示とクリック時の入力</td></tr>
+      <tr><td><code>src/main/ptyManager.ts</code></td><td>OSC 7 パース、cwd ポーリング（dirty フラグ）、resume 検出用の末尾バッファ、通知コールバック</td></tr>
+      <tr><td><code>src/main/index.ts</code></td><td><code>pty:cwd</code> / <code>pty:resume</code> の IPC 中継、再描画メニューの合図</td></tr>
+      <tr><td><code>src/main/menu.ts</code></td><td>「表示 &gt; 画面を再描画」（<code>Cmd+Shift+R</code>）</td></tr>
+      <tr><td><code>src/preload/index.ts</code>, <code>src/shared/types.ts</code></td><td>新 IPC の契約追加</td></tr>
+      <tr><td><code>src/renderer/src/styles.css</code></td><td>resume チップの見た目（既存 CSS 変数で）</td></tr>
+    </table>
+  </div>
+
+  <!-- ===== 8. 検証（完了の定義） ===== -->
+  <div class="card">
+    <h2>8. 検証 — 完了の定義</h2>
+    <ul>
+      <li><code>npm run typecheck</code> green</li>
+      <li><b>文字化け（強制再現）</b>：DevTools から <code>WEBGL_lose_context</code> 拡張でコンテキストを明示的に破棄 → 自動で描画が戻ること。戻らない場合も「画面を再描画」で必ず戻ること</li>
+      <li><b>文字化け（実機）</b>：Mac をスリープ→復帰、外部ディスプレイに移動、で化けないこと</li>
+      <li><b>cwd</b>：ペインで <code>cd</code> → アプリ再起動 → 同じフォルダで開くこと。フォルダを削除してから再起動しても落ちずにホームへ落ちること</li>
+      <li><b>resume</b>：Claude Code を起動→終了 → チップが出る → クリックでコマンドが入力される（<b>実行はされない</b>）→ 再起動後もチップが残ること</li>
+      <li><b>非退行</b>：分割・クローズ・リサイズで PTY が死なない（既存の永続化が壊れていない）、返事待ちの glow が従来どおり</li>
+    </ul>
+  </div>
+
+  <!-- ===== 9. 残論点 ===== -->
+  <div class="card">
+    <h2>9. 残論点 / 確認したいこと</h2>
+    <ul>
+      <li><b>プライバシー：</b> <code>config.json</code> に作業フォルダのパスと Claude セッション ID が平文で残る。レイアウトとタイトルが既に残っているのと同程度だが、明示的に合意しておきたい。嫌なら設定で OFF にできるようにする</li>
+      <li><b>lsof のポーリング間隔：</b> 10秒（出力のあったペインのみ）を提案。もっと粗くてよければ 30秒でも実用上は困らない</li>
+      <li><b>予防的な定期アトラスクリア（案D）：</b> まずは入れずに様子を見たい。それでも化けるようなら追加する</li>
+      <li><b>再描画のショートカット：</b> <code>Cmd+Shift+R</code> を提案。ブラウザの「スーパーリロード」と衝突しないか（Electron なので実害はないはず）</li>
+    </ul>
+  </div>
+
+</div>
+</body>
+</html>
