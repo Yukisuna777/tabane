@@ -62,8 +62,8 @@
 
   <!-- ===== ヘッダー ===== -->
   <div class="hero">
-    <h1>Tabane v2 — 文字化け修正 / ペインごとの状態記憶</h1>
-    <p>長時間起動すると全ペインが文字化けして読めなくなる不具合の修正と、ペインごとに「最後にいたフォルダ」「最後に見た Claude Code の resume コード」を覚えて再起動後に引き継ぐ機能。</p>
+    <h1>Tabane v2 — 文字化け修正 / ペイン状態記憶 / 日本語入力の取りこぼし</h1>
+    <p>長時間起動すると全ペインが文字化けして読めなくなる不具合の修正、ペインごとに「最後にいたフォルダ」「最後に見た Claude Code の resume コード」を覚えて再起動後に引き継ぐ機能、そして時々日本語入力ができなくなる不具合の修正。</p>
     <div class="chips">
       <span>ステータス：ドラフト（承認待ち）</span>
       <span>規模：中</span>
@@ -77,6 +77,7 @@
     <h2>1. 目的</h2>
     <p><b>A：文字化け（バグ）</b> — 数時間〜一晩置くと全ペインのテキストが別グリフに化け、スクロールバックごと読めなくなる。監督用ターミナルとして致命的（見張るための画面が見えない）。原因は特定済みで、xterm.js が公式に必須としているハンドリング漏れ。</p>
     <p style="margin-top:.5rem;"><b>B：ペインの状態記憶（機能）</b> — レイアウトとタイトルは復元されるのに、シェルは毎回ホーム（または起動フォルダ）から始まり、Claude Code のセッションも辿れない。ペインの名札に対応する<b>作業文脈</b>（どこで・何の続きを）まで復元して、再起動のコストを消す。</p>
+    <p style="margin-top:.5rem;"><b>C：日本語入力の取りこぼし（バグ）</b> — 時々、変換が要る入力ができなくなり、半角英数字でしか打てなくなる。日本語で指示を書くのが常態のツールとして致命的。xterm.js 5.5.0 のソースを読んで、確定文字が捨てられる経路を複数特定した。</p>
   </div>
 
   <!-- ===== 2. 原因分析（A） ===== -->
@@ -94,9 +95,45 @@
     </div>
   </div>
 
-  <!-- ===== 3. スコープ ===== -->
+  <!-- ===== 3. 原因分析（C） ===== -->
   <div class="card">
-    <h2>3. スコープ</h2>
+    <h2>3. 原因分析 — なぜ時々日本語が打てなくなるのか</h2>
+    <p>xterm.js 5.5.0 のソース（<code>npm pack</code> で取得して確認）を読み、<b>「確定した日本語が端末に届かない」経路が3つ実在する</b>ことを確認した。ASCII は composition を経由しないので無傷 ＝ 報告どおり「半角英数字なら打てる」になる。</p>
+
+    <h3>C-1：tabane の Shift+Enter ハンドラが変換中の合成処理を飛ばす（確度：高）</h3>
+    <p>xterm の <code>_keyDown</code> は <b>カスタムキーハンドラを composition 処理より先に呼び、<code>false</code> が返るとその場で return する</b>（<code>Terminal.ts</code>）：</p>
+    <pre>if (this._customKeyEventHandler &amp;&amp; this._customKeyEventHandler(event) === false) {
+  return false;                                   // ← ここで打ち切られる
+}
+if (!shouldIgnoreComposition &amp;&amp; !this._compositionHelper!.keydown(event)) { ... }</pre>
+    <p>一方 <code>terminalRegistry.ts:147</code> の判定は <code>e.key === 'Enter' &amp;&amp; e.shiftKey</code> だけで、<b><code>e.isComposing</code> を見ていない</b>。macOS の Chromium では変換中の keydown も <code>e.key</code> に実キー値が入るため、<b>未確定のまま Shift+Enter を押すと</b> PTY に <code>\x1b\r</code> が直接書かれ、xterm の合成確定処理はスキップされる。Claude Code で日本語プロンプトを書く＝Shift+Enter を多用する使い方なので、誤爆しやすい。</p>
+
+    <h3>C-2：確定テキストの遅延読み出しと blur の競合（確度：高）</h3>
+    <p><code>CompositionHelper._finalizeComposition()</code> は確定文字を <b><code>setTimeout(0)</code> の中で <code>textarea.value</code> から読む</b>。ところが <code>Terminal._handleTextAreaBlur()</code> は <b><code>this.textarea.value = ''</code> で中身を消す</b>。つまり compositionend からタイマー発火までの間に blur が挟まると、<b>確定した文字が空文字になって消える</b>。</p>
+    <p>tabane は <code>detachTerminal()</code>（<code>terminalRegistry.ts:191-194</code>）で <code>session.el.remove()</code> しており、分割・クローズ・レイアウト変更のたびに端末の DOM ごと外している。<b>変換中に別ペインや分割ボタンをクリックした瞬間</b>がこの窓に当たる。</p>
+
+    <h3>C-3：連続確定で pending 送出が巻き添えキャンセルされる（確度：中〜高）</h3>
+    <p>同じ <code>setTimeout(0)</code> 経路は <code>_isSendingComposition</code> フラグ1枚で多重送出を防いでいる。日本語を<b>短い文節で素早く連続確定</b>すると、1回目のタイマーがフラグを <code>false</code> に倒した後に2回目のタイマーが走り、<code>if (this._isSendingComposition)</code> に落ちて<b>2つ目の確定文字が丸ごと捨てられる</b>。「時々」「速く打ったときだけ」に合致する。</p>
+
+    <h3>C-4：DOM 再親子付けで composition 状態がスタック（確度：中）</h3>
+    <p><code>attachTerminal()</code> は <code>container.appendChild(existing.el)</code> で host div を別の親へ移動する。Chromium はフォーカス中の要素が DOM から外れても <b>blur を発火しない</b>ため、<code>_isComposing</code> が true のまま固まり、以後の IME 入力が飲み込まれうる。徴候は<b>画面に未確定文字の残骸が残る</b>こと。</p>
+
+    <div class="why" style="margin-top:.9rem;">
+      <b>why:</b> C-1 は tabane 側のバグで1行で直る。C-2 / C-4 は「端末の DOM を動かす」という tabane 固有の設計（永続レジストリ）が xterm の暗黙の前提を踏んでいる。<b>外す前に明示的に blur する</b>だけで、compositionend → 確定送出 → blur の順序が保証され、C-2 の競合も C-4 のスタックも同時に閉じられる。C-3 は xterm 本体の問題で、こちらからは緩和しかできない。
+    </div>
+
+    <h3>棄却した仮説</h3>
+    <ul>
+      <li><b>CSS が隠し textarea を殺している</b> — <code>styles.css:374-387</code> の <code>.xterm-helpers</code> / <code>.composition-view</code> は未確定文字列の折り返し対策のみ。<code>opacity</code> / <code>pointer-events</code> / <code>display</code> の上書きも、祖先の <code>transform</code> / <code>filter</code> も無い。棄却。</li>
+      <li><b>変換確定の Enter（Shift なし）を握り潰している</b> — カスタムハンドラは <code>e.shiftKey</code> を要求するので Shift なしの確定 Enter は素通し。棄却。</li>
+      <li><b>複数端末でフォーカスを奪い合う</b> — active ペイン以外に <code>focus()</code> するコードは存在しない。棄却。</li>
+      <li><b>フォーカス迷子</b>（<code>handleClose</code> がアクティブペインを閉じても <code>activePaneId</code> を移さない）— この状態では ASCII も打てないので主因ではない。ただし UX 上の実バグなので、ついでに直す。</li>
+    </ul>
+  </div>
+
+  <!-- ===== 4. スコープ ===== -->
+  <div class="card">
+    <h2>4. スコープ</h2>
     <div class="cols">
       <div class="scope do">
         <b>やること</b>
@@ -107,6 +144,9 @@
           <li>B-1：ペインごとの cwd 追跡（OSC 7 一次 + lsof ポーリング二次）と復元</li>
           <li>B-2：PTY 出力から <code>claude --resume &lt;uuid&gt;</code> を検出して記憶</li>
           <li>B-3：タイトルバーの resume チップ（クリックでコマンドを<b>入力するだけ</b>）</li>
+          <li>C-1：Shift+Enter ハンドラに変換中ガード（<code>!e.isComposing</code>）</li>
+          <li>C-2/C-4：<code>detachTerminal()</code> で DOM を外す前に明示 <code>blur()</code></li>
+          <li>C-5：アクティブペインを閉じたとき <code>activePaneId</code> を残存ペインへ付け替え</li>
         </ul>
       </div>
       <div class="scope dont">
@@ -118,14 +158,16 @@
           <li>シェル履歴・環境変数の復元</li>
           <li>WebGL をやめて DOM レンダラ固定にする（描画性能が落ちる。縮退先としてのみ使う）</li>
           <li>codex 以外のエージェント固有 ID の対応（正規表現の追加で足りるので後追いでよい）</li>
+          <li>C-3（xterm 本体の連続確定バグ）の根本修正 — パッチ/フォークは持たない。上流追随で待つ</li>
+          <li>Electron 35+ への更新と <code>moveBefore()</code> 化（C-2/C-4 の本命解だが、別途 Electron 更新の検証が要る。今回は blur で塞ぐ）</li>
         </ul>
       </div>
     </div>
   </div>
 
-  <!-- ===== 4. アプローチ案（A） ===== -->
+  <!-- ===== 5. アプローチ案（A） ===== -->
   <div class="card">
-    <h2>4. アプローチ案 — 文字化けの直し方</h2>
+    <h2>5. アプローチ案 — 文字化けの直し方</h2>
     <table>
       <tr><th>案</th><th>内容</th><th>トレードオフ</th><th>採否</th></tr>
       <tr><td>A</td><td><code>onContextLoss</code> で張り直し ＋ 復帰時アトラスクリア ＋ 手動再描画</td><td>公式手順どおり。原因3系統（コンテキスト喪失・アトラス破損・上限超え）を全部拾える。追加依存なし</td><td><b>推奨</b></td></tr>
@@ -158,11 +200,11 @@ export function redrawAllTerminals(): void {
     <p style="font-size:.9rem;color:var(--muted);">自動トリガは renderer 側に置く：<code>window.focus</code> / <code>visibilitychange</code>（スリープ・アプリ復帰）と、<code>matchMedia(`(resolution: ${devicePixelRatio}dppx)`)</code> の変化（外部ディスプレイ移動）。どちらも「化けが起きる瞬間」そのもので、ここでクリアすればユーザーは破損に気づかない。</p>
   </div>
 
-  <!-- ===== 5. 設計（B） ===== -->
+  <!-- ===== 6. 設計（B） ===== -->
   <div class="card">
-    <h2>5. 設計 — ペインごとの状態記憶</h2>
+    <h2>6. 設計 — ペインごとの状態記憶</h2>
 
-    <h3>5.1 保存先</h3>
+    <h3>6.1 保存先</h3>
     <p>既存のレイアウト永続化にそのまま乗せる。<code>PaneNode</code> に2フィールド追加するだけで、<code>config.json</code> への保存・復元・debounce は既存経路を再利用できる。</p>
     <pre>export interface PaneNode {
   kind: 'pane'
@@ -175,14 +217,14 @@ export function redrawAllTerminals(): void {
   lastResume?: string
 }</pre>
 
-    <h3>5.2 cwd の追跡（2段構え）</h3>
+    <h3>6.2 cwd の追跡（2段構え）</h3>
     <ul>
       <li><b>一次：OSC 7</b>（<code>ESC]7;file://host/path BEL</code>）。starship / oh-my-zsh 等を使っていればシェルが毎プロンプトで正確に報告してくれる。<code>ptyManager</code> の出力ハンドラで拾うだけなので追加コストはゼロ。</li>
       <li><b>二次：lsof ポーリング</b>。既存の <code>getCwdOfPid()</code> をそのまま使う。macOS 素の zsh は OSC 7 を出さない（<code>/etc/zshrc</code> の報告は <code>TERM_PROGRAM=Apple_Terminal</code> 限定）ため、こちらが本命になる人も多い。<b>出力があったセッションだけ</b>を10秒間隔で引く（dirty フラグ方式）。暇なペインでは <code>lsof</code> を起動しない。</li>
       <li>変化したときだけ <code>pty:cwd</code> を renderer に送る → <code>PaneNode.lastCwd</code> を更新 → 既存の debounce 保存に乗る。</li>
     </ul>
 
-    <h3>5.3 resume コードの検出</h3>
+    <h3>6.3 resume コードの検出</h3>
     <p>Claude Code は終了時に次を出力する：</p>
     <pre>Resume this session with:
 claude --resume cb9c8b81-1745-4961-82fa-c9c02be60cf8</pre>
@@ -192,7 +234,7 @@ claude --resume cb9c8b81-1745-4961-82fa-c9c02be60cf8</pre>
       <li>検出したら <code>pty:resume</code> を renderer に送る。<b>最後に見たものだけ</b>を保持（上書き）。</li>
     </ul>
 
-    <h3>5.4 復元と UI</h3>
+    <h3>6.4 復元と UI</h3>
     <ul>
       <li>起動時、<code>attachTerminal</code> に <code>cwd</code> を渡せるようにして <code>createPty({ cwd: pane.lastCwd })</code> する。消えたディレクトリのフォールバックは <code>ptyManager</code> の既存チェック（<code>existsSync</code>）がすでに面倒を見ている。</li>
       <li><code>lastResume</code> があるペインは、タイトルバーに小さなチップ <code>⟲ resume</code> を出す。<b>クリックで端末にコマンドを入力するだけ</b>（改行は送らない）。ユーザーが内容を見て Enter する。ホバーで完全な ID をツールチップ表示。</li>
@@ -204,9 +246,9 @@ claude --resume cb9c8b81-1745-4961-82fa-c9c02be60cf8</pre>
     </div>
   </div>
 
-  <!-- ===== 6. 処理フロー ===== -->
+  <!-- ===== 7. 処理フロー ===== -->
   <div class="card">
-    <h2>6. 処理フロー</h2>
+    <h2>7. 処理フロー</h2>
     <h3>A：文字化けからの復旧</h3>
     <div class="flow">
       <span>スリープ復帰 / GPU クラッシュ</span><i>→</i>
@@ -227,13 +269,13 @@ claude --resume cb9c8b81-1745-4961-82fa-c9c02be60cf8</pre>
     </div>
   </div>
 
-  <!-- ===== 7. 変更対象ファイル ===== -->
+  <!-- ===== 8. 変更対象ファイル ===== -->
   <div class="card">
-    <h2>7. 変更対象ファイル</h2>
+    <h2>8. 変更対象ファイル</h2>
     <table>
       <tr><th>ファイル</th><th>変更内容</th></tr>
-      <tr><td><code>src/renderer/src/terminalRegistry.ts</code></td><td>WebglAddon の onContextLoss ハンドリングと張り直し、<code>redrawAllTerminals()</code>、attach 時の cwd 受け渡し</td></tr>
-      <tr><td><code>src/renderer/src/App.tsx</code></td><td>復旧の自動トリガ（focus / visibilitychange / DPR）購読、cwd・resume イベントを PaneNode に反映</td></tr>
+      <tr><td><code>src/renderer/src/terminalRegistry.ts</code></td><td>WebglAddon の onContextLoss ハンドリングと張り直し、<code>redrawAllTerminals()</code>、attach 時の cwd 受け渡し、Shift+Enter の変換中ガード（C-1）、detach 前の明示 blur（C-2/C-4）</td></tr>
+      <tr><td><code>src/renderer/src/App.tsx</code></td><td>復旧の自動トリガ（focus / visibilitychange / DPR）購読、cwd・resume イベントを PaneNode に反映、close 時の activePaneId 付け替え（C-5）</td></tr>
       <tr><td><code>src/renderer/src/layout.ts</code></td><td><code>PaneNode</code> に <code>lastCwd</code> / <code>lastResume</code>、更新用の純粋関数</td></tr>
       <tr><td><code>src/renderer/src/components/TitleBar.tsx</code></td><td>resume チップの表示とクリック時の入力</td></tr>
       <tr><td><code>src/main/ptyManager.ts</code></td><td>OSC 7 パース、cwd ポーリング（dirty フラグ）、resume 検出用の末尾バッファ、通知コールバック</td></tr>
@@ -244,27 +286,33 @@ claude --resume cb9c8b81-1745-4961-82fa-c9c02be60cf8</pre>
     </table>
   </div>
 
-  <!-- ===== 8. 検証（完了の定義） ===== -->
+  <!-- ===== 9. 検証（完了の定義） ===== -->
   <div class="card">
-    <h2>8. 検証 — 完了の定義</h2>
+    <h2>9. 検証 — 完了の定義</h2>
     <ul>
       <li><code>npm run typecheck</code> green</li>
       <li><b>文字化け（強制再現）</b>：DevTools から <code>WEBGL_lose_context</code> 拡張でコンテキストを明示的に破棄 → 自動で描画が戻ること。戻らない場合も「画面を再描画」で必ず戻ること</li>
       <li><b>文字化け（実機）</b>：Mac をスリープ→復帰、外部ディスプレイに移動、で化けないこと</li>
       <li><b>cwd</b>：ペインで <code>cd</code> → アプリ再起動 → 同じフォルダで開くこと。フォルダを削除してから再起動しても落ちずにホームへ落ちること</li>
       <li><b>resume</b>：Claude Code を起動→終了 → チップが出る → クリックでコマンドが入力される（<b>実行はされない</b>）→ 再起動後もチップが残ること</li>
-      <li><b>非退行</b>：分割・クローズ・リサイズで PTY が死なない（既存の永続化が壊れていない）、返事待ちの glow が従来どおり</li>
+      <li><b>日本語入力（C-1）</b>：日本語を未確定のまま <code>Shift+Enter</code> → 変換が確定してから改行が入る（改行が変換文字より先に割り込まない）。確定後の <code>Shift+Enter</code> は従来どおり改行になる</li>
+      <li><b>日本語入力（C-2/C-4）</b>：変換中に別ペインをクリック／分割ボタンを押す → 確定文字が消えない、未確定文字の残骸が残らない、その後も日本語が打てる</li>
+      <li><b>日本語入力（C-3）</b>：短い文節で高速に連続変換確定 → 取りこぼしが起きないこと。<b>残る場合は xterm 本体の問題として上流に報告し、残論点に記録する</b>（今回のスコープ外）</li>
+      <li><b>非退行</b>：分割・クローズ・リサイズで PTY が死なない（既存の永続化が壊れていない）、返事待ちの glow が従来どおり、<code>styles.css</code> の未確定文字列の折り返し対策が効いたまま</li>
     </ul>
   </div>
 
-  <!-- ===== 9. 残論点 ===== -->
+  <!-- ===== 10. 残論点 ===== -->
   <div class="card">
-    <h2>9. 残論点 / 確認したいこと</h2>
+    <h2>10. 残論点 / 確認したいこと</h2>
     <ul>
       <li><b>プライバシー：</b> <code>config.json</code> に作業フォルダのパスと Claude セッション ID が平文で残る。レイアウトとタイトルが既に残っているのと同程度だが、明示的に合意しておきたい。嫌なら設定で OFF にできるようにする</li>
       <li><b>lsof のポーリング間隔：</b> 10秒（出力のあったペインのみ）を提案。もっと粗くてよければ 30秒でも実用上は困らない</li>
       <li><b>予防的な定期アトラスクリア（案D）：</b> まずは入れずに様子を見たい。それでも化けるようなら追加する</li>
       <li><b>再描画のショートカット：</b> <code>Cmd+Shift+R</code> を提案。ブラウザの「スーパーリロード」と衝突しないか（Electron なので実害はないはず）</li>
+      <li><b>日本語入力の再現条件（切り分けに一番効く質問）：</b> 打てなくなったとき、<b>下線付きの未確定ひらがなは画面に出るか</b>？ ①出ない（打鍵即、半角英数が出る）＝ Chromium レベルで IME が外れている＝C-4 系。②出て変換もできるが、確定すると端末に現れない＝C-1/C-2/C-3 系。あわせて「直る契機」（別ペインをクリックすれば直る／アプリ再起動が要る）も分かると確定できる</li>
+      <li><b>C-3 は xterm 本体の問題：</b> こちらの修正では直らない可能性がある。残ったら上流 issue を追う。<code>@xterm/xterm</code> の更新追随をどの頻度でやるかも決めておきたい</li>
+      <li><b>Electron 35+ 更新：</b> C-2/C-4 の本命解は <code>appendChild</code> を <code>moveBefore()</code>（フォーカスと composition を保持する atomic move）に変えることだが、Chromium 133+ ＝ Electron 35+ が要る（現在 ^33）。今回は blur で塞ぎ、Electron 更新は別タスクにしたい</li>
     </ul>
   </div>
 
