@@ -226,6 +226,10 @@ function writeHooksSettings(): void {
 function buildInitialCommand(spec: OpenRequest): string | undefined {
   if (!spec.prompt) return undefined
   const args: string[] = ['--settings', shellQuote(hooksSettingsPath())]
+  // ペインのタイトルを子セッションの表示名にも使う。こうしておくと指揮役が
+  // Claude Code のセッション間メッセージング（@表示名）で子に直接話しかけられる。
+  // tabane は「起こす・待つ・見せる」に専念し、会話そのものは公式機能に任せる。
+  if (spec.title) args.push('-n', shellQuote(spec.title))
   // strict は既定のまま（フラグを足さない）。yolo は現状受け付けない。
   if (spec.permission === 'edit') args.push('--permission-mode', 'acceptEdits')
   args.push(shellQuote(spec.prompt))
@@ -258,7 +262,9 @@ async function handleOpen(spec: OpenRequest): Promise<TabaneResponse> {
         pendingSpawns.delete(specId)
         reject(new Error('ペイン生成がタイムアウトした'))
       }, SPAWN_TIMEOUT_MS)
-      pendingSpawns.set(specId, { spec: { ...spec, cwd }, resolve, reject, timer })
+      // title は既定値（cwd のベース名）まで解決した状態で保存する。
+      // 子の表示名にも使うため、undefined のまま持ち回らせない。
+      pendingSpawns.set(specId, { spec: { ...spec, cwd, title }, resolve, reject, timer })
       send('pane:spawn', { specId, title })
     })
     const paneNumber = paneNumberOf(ptyId)

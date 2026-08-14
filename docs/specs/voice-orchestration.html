@@ -112,6 +112,7 @@
         <b>やらないこと</b>
         <ul>
           <li><b>読み上げ（TTS）</b>。Claude Code に機能がなく、マイクが拾う echo 問題も出る</li>
+          <li><b>指揮役から子への追加指示</b>。Claude Code のセッション間メッセージングに任せる（後述）</li>
           <li><b>LLM に走行中の TUI をキー操作させる</b>。再描画・タイミング・権限プロンプトで事故る</li>
           <li>音声での権限承認（誤爆の代償が大きい）</li>
           <li>音声認識の自前実装。<code>/voice</code> を使う（動かないと判明した場合のみ再検討）</li>
@@ -144,6 +145,24 @@
     </div>
     <div class="why">
       <b>why:</b> 指揮役はターン制なので、子の完了に自分で気づけない。ポーリングだと人間が毎回尋ねる必要があり、PTY への割り込み通知だと人間の入力中にも刺さって暴走の停止が難しくなる。<b>指揮役が自分のターンの中でブロックして待つ</b><code>wait</code> なら、割り込みを起こさずに「3つ投げて全部終わるまで待つ」が自然に書ける。
+    </div>
+
+    <h3>Claude Code のセッション間メッセージングとの役割分担</h3>
+    <p>本仕様の起草後、Claude Code に<b>セッション間メッセージング</b>（<code>/list-agents</code> と <code>@表示名</code> による送信）が入った。実機で双方向の疎通を確認済み。これを踏まえて担当を分ける。</p>
+    <div class="tablewrap">
+    <table>
+      <tr><th>やりたいこと</th><th>担当</th><th>理由</th></tr>
+      <tr><td>セッション一覧と状態を見る</td><td>Claude Code</td><td><code>/list-agents</code> と <code>claude agents --json</code> で足りる</td></tr>
+      <tr><td>既存セッションに一言送る</td><td>Claude Code</td><td><code>@表示名</code> で送れる。<b>tabane が PTY へ直挿しする必要はなくなった</b></td></tr>
+      <tr><td>セッションを新しく起こす／cwd を決める</td><td><b>tabane</b></td><td>公式は既存セッション宛てのみで、生成はできない</td></tr>
+      <tr><td>完了までブロックして待つ</td><td><b>tabane</b></td><td>公式はポーリング。受信も「相手が次にツールを叩くとき」のため、完了を能動的に掴めない</td></tr>
+      <tr><td><code>done</code> と <code>needs_input</code> の区別</td><td><b>tabane</b></td><td>公式は <code>idle</code> / <code>busy</code> のみ。「完了」と「暇」が同じに見える</td></tr>
+      <tr><td>画面に並べて人間が介入する</td><td><b>tabane</b></td><td>UI の領分</td></tr>
+    </table>
+    </div>
+    <div class="why">
+      <b>why:</b> <code>tabane open --title</code> の値を <code>claude -n &lt;name&gt;</code> にも渡すことで、指揮役が <code>@記事修正</code> のように<b>公式機能で子に直接話しかけられる</b>ようになる。tabane は「起こす・待つ・見せる」に専念し、会話そのものは公式に任せる。<br>
+      なお <b>PTY への直接書き込みは「人間の声」専用として残す</b>。走行中のセッションに人間が一言足す経路は公式に存在せず、PTY を握る tabane にしかできないため。
     </div>
 
     <h3>指揮役ペインの置き場所</h3>
@@ -211,7 +230,7 @@
     <ul>
       <li><code>--cwd</code> … 必須。存在しなければエラー</li>
       <li><code>--prompt</code> … 省略時は claude を起動せずシェルだけ開く</li>
-      <li><code>--title</code> … ペインのタイトルバーに出す名札。省略時は cwd のベース名</li>
+      <li><code>--title</code> … ペインの名札。省略時は cwd のベース名。<b>子の <code>claude -n</code> にも渡す</b>ので、指揮役はこの名前で <code>@記事修正</code> のように話しかけられる</li>
       <li><code>--permission</code> … <code>strict</code>（既定） / <code>edit</code> / <code>yolo</code></li>
       <li>同時ペイン数が上限に達している場合はエラーを返し、ペインを作らない</li>
     </ul>
@@ -284,11 +303,28 @@
       <li>決定：完了通知はブロッキング <code>wait</code>。PTY への割り込み通知は採用しない</li>
       <li>決定：権限は <code>--permission</code> で選択、既定は <code>strict</code>。危険側には必ず人間の意思が一度入る</li>
       <li>決定：耳は <code>/voice</code> を使い、音声認識は自前実装しない</li>
+      <li>決定（起草後の追記）：指揮役から子への追加指示は<b>実装しない</b>。Claude Code のセッション間メッセージング（<code>@表示名</code>）に任せる。そのために <code>--title</code> を <code>claude -n</code> へ渡す</li>
+      <li>決定（起草後の追記）：PTY への直接書き込みは<b>人間の声専用</b>として残す。走行中のセッションに人間が一言足す経路は公式に存在しないため</li>
     </ul>
+    <h3>別タスクに切り出す：人間の許可をどう扱うか</h3>
+    <p>実機検証で見つかった。<b>フォルダの信頼確認は hooks より手前にある</b>ため、未信頼の cwd を指定すると子は「このフォルダを信用しますか？」で停止し、hooks が入る前なので何も申告されない。指揮役からは <code>running</code> に見え続け、<b>「作業中」と「人間の許可待ち」が区別できない</b>——hooks で解決したかった問題が、hooks の手前で再発する。声で操作する場合は画面を見ていないため、黙って固まったまま気づかれない危険がある。</p>
+    <div class="tablewrap">
+    <table>
+      <tr><th>案</th><th>内容</th><th>評価</th></tr>
+      <tr><td>A</td><td><code>open</code> の時点で cwd が信頼済みかを確認し、未信頼ならペインを作らずエラーを返す</td><td><b>本命</b>。指揮役が即座に人間へ知らせられる</td></tr>
+      <tr><td>B</td><td>一定時間 <code>running</code> のままなら <code>needs_input</code> 扱いにする</td><td>—。長い作業と区別できず誤検知する</td></tr>
+      <tr><td>C</td><td><code>open</code> 時に信頼済みリストへ自動登録する</td><td><b>採らない</b>。信頼の判断を人間から奪う</td></tr>
+    </table>
+    </div>
+    <div class="warn">
+      <b>あわせて再考する:</b> <code>strict</code> は「フラグを足さず既定のまま」と定義したが、ユーザーの <code>permissions.defaultMode</code> が <code>auto</code> の場合は権限確認が出ずに素通りする。<b><code>strict</code> の意味がユーザー設定に依存してしまう</b>ため、<code>--permission-mode</code> を明示的に渡すべきか検討する。信頼と権限は「人間の許可をどう扱うか」という同じ根を持つため、まとめて扱う。
+    </div>
+
     <h3>未決</h3>
     <ul>
       <li><b>最重要・実測待ち：</b><code>/voice</code> が tabane の PTY 内で動作するか。ドキュメントに記載がなく、リモート環境は非対応と明言されている。ローカルの node-pty については未記載のため実機確認が必要。<code>tap</code> モードの方が安定する見込み（<code>hold</code> は Space のキーリピート検出に依存するため xterm.js 越しで化ける可能性）</li>
       <li><b>マイク権限：</b>現在の <code>electron-builder.yml</code> に <code>NSMicrophoneUsageDescription</code> の宣言がない。加えて <code>identity: null</code>（無署名）のため、TCC の権限がビルドごとに揮発する懸念がある。上記実測の結果しだいで対応方針を決める</li>
+      <li>Notification hook（<code>needs_input</code>）の実機確認。信頼確認で先に止まったため未検証のまま。上記「人間の許可をどう扱うか」と同じタスクで扱う</li>
       <li>同時ペイン数の上限（具体的な数字）</li>
       <li><code>wait --timeout</code> の既定値。claude 側の Bash 実行時間上限との兼ね合いで決める</li>
       <li>socket のパス。<code>userData</code> 配下に置く想定だが、多重起動時の扱いを決める必要がある</li>
