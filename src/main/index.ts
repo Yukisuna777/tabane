@@ -2,7 +2,15 @@ import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { join, dirname, extname, basename } from 'node:path'
 
 import { fileURLToPath } from 'node:url'
-import { readFileSync, existsSync, writeFileSync, symlinkSync, unlinkSync } from 'node:fs'
+import {
+  readFileSync,
+  existsSync,
+  writeFileSync,
+  symlinkSync,
+  unlinkSync,
+  accessSync,
+  constants
+} from 'node:fs'
 import { homedir } from 'node:os'
 import { randomUUID } from 'node:crypto'
 import { PtyManager, paneNumberOf } from './ptyManager.js'
@@ -424,25 +432,70 @@ async function pickDefaultCwd(): Promise<void> {
 function killAllPanes(): void {
   const targets = ptyManager.ids()
   if (targets.length === 0 || !mainWindow) return
+
+  // 走行中のエージェント数を数えて見せる。「何が失われるか」が分かってから押させる。
+  const running = targets.filter(
+    (id) => agentStates.get(paneNumberOf(id)) === 'running'
+  ).length
+
   const choice = dialog.showMessageBoxSync(mainWindow, {
     type: 'warning',
-    buttons: ['停止する', 'キャンセル'],
+    // ボタン自体に数を出す。「停止する」だけだと確認と気づかず押してしまうため。
+    buttons: [`${targets.length} 個すべて停止`, 'キャンセル'],
     defaultId: 1,
     cancelId: 1,
-    message: `${targets.length} 個のペインを全て停止する？`,
-    detail: '実行中のエージェントも含めて、すべて終了します。'
+    message: 'すべてのペインを停止する？',
+    detail:
+      (running > 0
+        ? `${running} 個のペインでエージェントが実行中。作業内容は失われる。\n\n`
+        : '') + 'この操作は元に戻せない。'
   })
   if (choice !== 0) return
   send('pane:close', { ptyIds: targets })
+}
+
+/**
+ * インストール先の候補。書き込める最初の1つを使う。
+ * 自分の領域（~/.local/bin）を優先し、Homebrew の管理下や sudo が要る場所は後ろに置く。
+ */
+function cliInstallCandidates(): string[] {
+  return [join(homedir(), '.local', 'bin'), '/opt/homebrew/bin', '/usr/local/bin']
+}
+
+/** 書き込めるディレクトリを探す。既存の tabane があればそこを優先（貼り替え）。 */
+function pickInstallDir(): string | undefined {
+  const candidates = cliInstallCandidates()
+  const existing = candidates.find((d) => existsSync(join(d, 'tabane')))
+  if (existing) return existing
+  return candidates.find((d) => {
+    try {
+      accessSync(d, constants.W_OK)
+      return true
+    } catch {
+      return false
+    }
+  })
 }
 
 /** tabane コマンドを PATH の通った場所へリンクする。失敗したら手順を案内する。 */
 function installCli(): void {
   if (!mainWindow) return
   const src = cliPath()
-  const dest = '/usr/local/bin/tabane'
-  const manual = `ln -sf ${JSON.stringify(src)} /usr/local/bin/tabane`
+  const dir = pickInstallDir()
 
+  if (!dir) {
+    // 書ける場所が1つも無い。sudo が要る手順を案内する。
+    void dialog.showMessageBox(mainWindow, {
+      type: 'warning',
+      message: '書き込めるインストール先が見つからない',
+      detail:
+        `候補: ${cliInstallCandidates().join(', ')}\n\n` +
+        `手動で実行して：\nsudo ln -sf ${JSON.stringify(src)} /usr/local/bin/tabane`
+    })
+    return
+  }
+
+  const dest = join(dir, 'tabane')
   if (existsSync(dest)) {
     const overwrite = dialog.showMessageBoxSync(mainWindow, {
       type: 'question',
@@ -455,19 +508,23 @@ function installCli(): void {
   }
 
   try {
-    if (!existsSync(dirname(dest))) throw new Error(`${dirname(dest)} が無い`)
     if (existsSync(dest)) unlinkSync(dest)
     symlinkSync(src, dest)
+    const onPath = (process.env.PATH ?? '').split(':').includes(dir)
     void dialog.showMessageBox(mainWindow, {
       type: 'info',
       message: 'インストールした',
-      detail: `${dest} → ${src}\n\n新しいシェルから tabane が使える。`
+      detail: onPath
+        ? `${dest}\n\n新しいシェルから tabane が使える。`
+        : `${dest}\n\n${dir} は PATH に入っていないので、シェルの設定に追加して：\nexport PATH="${dir}:$PATH"`
     })
   } catch (e) {
     void dialog.showMessageBox(mainWindow, {
       type: 'warning',
       message: '自動インストールできなかった',
-      detail: `${e instanceof Error ? e.message : String(e)}\n\n手動で実行して：\n${manual}`
+      detail:
+        `${e instanceof Error ? e.message : String(e)}\n\n` +
+        `手動で実行して：\nln -sf ${JSON.stringify(src)} ${dest}`
     })
   }
 }
