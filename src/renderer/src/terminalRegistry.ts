@@ -99,6 +99,16 @@ export function setTerminalTheme(theme: ThemeMode): void {
 
 interface AttachOptions {
   inheritCwdFromPtyId?: string
+  /** `tabane open` 由来のペイン。main がこの ID で cwd と起動コマンドを解決する。 */
+  spawnSpecId?: string
+}
+
+// PTY が出来た合図。App が「ptyId とタイトルの対応」を main へ同期するのに使う
+// （Props を増やさずに済むよう、モジュールシングルトンで受け渡す）。
+let sessionReadyListener: (() => void) | null = null
+
+export function setSessionReadyListener(cb: (() => void) | null): void {
+  sessionReadyListener = cb
 }
 
 /** container に、そのペインの端末を（無ければ生成して）アタッチする。 */
@@ -169,7 +179,8 @@ export function attachTerminal(
     readyPromise: window.tabane.createPty({
       cols: term.cols || 80,
       rows: term.rows || 24,
-      inheritCwdFromPtyId: opts.inheritCwdFromPtyId
+      inheritCwdFromPtyId: opts.inheritCwdFromPtyId,
+      spawnSpecId: opts.spawnSpecId
     })
   }
   sessions.set(paneId, session)
@@ -182,6 +193,7 @@ export function attachTerminal(
     session.ptyId = id
     byPtyId.set(id, session) // グローバルの pty:data 振り分けに登録
     term.onData((d) => window.tabane.writePty(id, d))
+    sessionReadyListener?.()
   })
 
   return session

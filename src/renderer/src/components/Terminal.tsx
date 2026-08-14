@@ -6,6 +6,8 @@ interface Props {
   active: boolean
   /** 分割元シェルの cwd を継ぐための元 PTY id（初回ペインは無し） */
   inheritCwdFromPtyId?: string
+  /** `tabane open` 由来のペインなら、main が起動スペックを引くための ID */
+  spawnSpecId?: string
   /** PTY が生成できたら親に通知（status 紐付け・focus 用） */
   onReady: (ptyId: string) => void
   onActivate: () => void
@@ -15,6 +17,7 @@ export function TerminalView({
   paneId,
   active,
   inheritCwdFromPtyId,
+  spawnSpecId,
   onReady,
   onActivate
 }: Props): JSX.Element {
@@ -26,7 +29,7 @@ export function TerminalView({
 
     // 永続レジストリに端末を付ける（無ければ生成、あれば DOM を移すだけ）。
     // remount で PTY/xterm は死なない ＝ 分割元シェルがリセットされない。
-    const session = attachTerminal(paneId, container, { inheritCwdFromPtyId })
+    const session = attachTerminal(paneId, container, { inheritCwdFromPtyId, spawnSpecId })
 
     let cancelled = false
     session.readyPromise.then((id) => {

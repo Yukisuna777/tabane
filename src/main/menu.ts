@@ -8,6 +8,10 @@ interface MenuCallbacks {
   onClearBackground: () => void
   onSetOpacity: (opacity: number) => void
   currentOpacity: () => number
+  /** 全ペインの緊急停止。指揮役 LLM を経由しない停止経路として必ず残す。 */
+  onKillAllPanes: () => void
+  /** tabane コマンドをパスに通す。 */
+  onInstallCli: () => void
 }
 
 /** アプリメニューを構築。背景画像の設定項目を「表示」メニューに置く。
@@ -64,6 +68,19 @@ export function buildMenu(cb: MenuCallbacks): void {
         { role: 'reload' },
         { role: 'toggleDevTools' },
         { role: 'togglefullscreen' }
+      ]
+    },
+    {
+      label: 'ペイン',
+      submenu: [
+        {
+          // 指揮役が詰まっていても効く停止手段。LLM を通さないのが肝。
+          label: '全ペインを停止…',
+          accelerator: 'CmdOrCtrl+Shift+K',
+          click: cb.onKillAllPanes
+        },
+        { type: 'separator' },
+        { label: 'tabane コマンドをパスにインストール…', click: cb.onInstallCli }
       ]
     },
     { role: 'windowMenu' }

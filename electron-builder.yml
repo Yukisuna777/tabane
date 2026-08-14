@@ -23,6 +23,12 @@ files:
 asarUnpack:
   - node_modules/node-pty/**
 
+# tabane CLI は asar の外に置く。hooks も PATH のリンクも実ファイルを直接叩くため、
+# asar 内では実行できない（Resources/bin/tabane として配置される）。
+extraResources:
+  - from: bin
+    to: bin
+
 mac:
   category: public.app-category.developer-tools
   # 自分用・個人配布のため署名しない（証明書なしでもビルドを通す）。
