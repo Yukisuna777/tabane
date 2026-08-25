@@ -183,17 +183,31 @@ export class PtyManager {
       ? ['-l', '-c', `${opts.initialCommand}; exec ${shell} -l`]
       : ['-l']
 
+    const paneEnv: NodeJS.ProcessEnv = {
+      ...process.env,
+      TERM: 'xterm-256color',
+      // hooks が `tabane report --pane $TABANE_PANE_ID` で自分を名乗るために使う。
+      TABANE_PANE_ID: String(paneNumber)
+    }
+    // 「Claude Code の Bash から起動された子プロセス」の印を落とす。
+    //
+    // claude セッションの中から `npm run dev` で tabane を起こすと、このマーカーが
+    // Electron に引き継がれ、ここの env 継承で全ペインに配られてしまう。すると各ペインの
+    // claude が自分を子セッションだと思い込み、トランスクリプトを保存しなくなる
+    // （＝会話ログが残らず --resume / --continue で戻れない）。tabane のペインは
+    // 独立した親セッションなので、印は必ず落とす。
+    //
+    // 値に undefined を入れるのでは駄目で delete が要る。node-pty の _parseEnv は
+    // キーの undefined しか弾かず、値はそのまま連結するため "…=undefined" という
+    // 非空の値になり、セットされているのと同じに見える（terminal.js の _parseEnv）。
+    delete paneEnv.CLAUDE_CODE_CHILD_SESSION
+
     const pty = spawn(shell, args, {
       name: 'xterm-256color',
       cols: Math.max(2, opts.cols),
       rows: Math.max(2, opts.rows),
       cwd: cwd || os.homedir(),
-      env: {
-        ...process.env,
-        TERM: 'xterm-256color',
-        // hooks が `tabane report --pane $TABANE_PANE_ID` で自分を名乗るために使う。
-        TABANE_PANE_ID: String(paneNumber)
-      }
+      env: paneEnv
     })
 
     const session: Session = {
