@@ -33,6 +33,12 @@ export function Pane({
     if (ptyId) window.tabane.focusPty(ptyId)
   }, [node.id, ptyId, onActivate])
 
+  // 再開コマンドを端末に「入力するだけ」。改行は送らないので、
+  // ユーザーが中身を見てから自分で Enter する（復元時に一斉起動して事故らせない）。
+  const insertResume = useCallback(() => {
+    if (ptyId && node.lastResume) window.tabane.writePty(ptyId, node.lastResume)
+  }, [ptyId, node.lastResume])
+
   const glow = status === 'waiting'
 
   return (
@@ -43,13 +49,16 @@ export function Pane({
       <TitleBar
         title={node.title}
         status={status}
+        resume={node.lastResume}
         onTitleChange={(t) => onTitleChange(node.id, t)}
         onSplit={(dir) => onSplit(node.id, dir)}
         onClose={() => onClose(node.id)}
+        onResume={insertResume}
       />
       <TerminalView
         paneId={node.id}
         active={active}
+        cwd={node.lastCwd}
         inheritCwdFromPtyId={node.inheritCwdFromPtyId}
         spawnSpecId={node.spawnSpecId}
         onReady={setPtyId}

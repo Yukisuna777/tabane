@@ -26,6 +26,56 @@ async function getCwdOfPid(pid: number): Promise<string | undefined> {
 }
 
 /**
+ * OSC 7（`ESC ] 7 ; file://host/path BEL`）。シェルが毎プロンプトで cwd を報告する事実上の標準。
+ * starship / oh-my-zsh 等を入れていれば正確・即時・ゼロコストで cwd が分かる。
+ */
+const OSC7_RE = /\x1b\]7;file:\/\/[^/]*(\/[^\x07\x1b]*)(?:\x07|\x1b\\)/g
+/** 正規表現を走らせる前の足切り用リテラル。 */
+const OSC7_MARK = '\x1b]7;'
+
+/**
+ * エージェントが終了時に出す再開コマンド。行頭・末尾は問わず、末尾バッファ全体から
+ * 最後の1件を採る（新しいものが常に古いものを上書きする）。
+ */
+const RESUME_RE = /(?:claude\s+--resume\s+[0-9a-f-]{36}|codex\s+resume\s+\S+)/gi
+/** 同上の足切り。コマンド側は常に小文字なのでこれで拾える。 */
+const RESUME_MARK = 'resume'
+
+/** CSI / OSC / 単発エスケープ。resume 検出前に色や制御を落とすため。 */
+const ANSI_RE = /\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[@-Z\\-_]/g
+
+/**
+ * 検出用に持つ末尾バッファの長さ。チャンク分割で UUID や URL が割れても拾えるようにする。
+ * 長すぎると毎チャンクの正規表現が重くなるだけなので、数行ぶんあれば足りる。
+ */
+const TAIL_MAX = 2048
+
+/** cwd ポーリングの間隔。出力のあったペインだけを引くので、暇なペインでは lsof を起動しない。 */
+const CWD_POLL_MS = 10_000
+
+/** OSC 7 で報告された cwd を取り出す（最後の1件）。無ければ undefined。 */
+function parseOsc7(buf: string): string | undefined {
+  let found: string | undefined
+  for (const m of buf.matchAll(OSC7_RE)) found = m[1]
+  if (found === undefined) return undefined
+  try {
+    // パスは URL エンコードされている（空白や日本語を含むフォルダ）。
+    return decodeURIComponent(found)
+  } catch {
+    return found
+  }
+}
+
+/** 末尾バッファから再開コマンドを取り出す（最後の1件）。無ければ undefined。 */
+function parseResume(buf: string): string | undefined {
+  const plain = buf.replace(ANSI_RE, '')
+  let found: string | undefined
+  for (const m of plain.matchAll(RESUME_RE)) found = m[0]
+  // 改行や連続スペースで割れていても1行のコマンドとして扱えるよう畳む。
+  return found?.replace(/\s+/g, ' ').trim()
+}
+
+/**
  * 返事待ち検知のしきい値（仮。実運用でチューニングする）。
  * - BELL_SETTLE_MS: BEL/通知シーケンスを受けてから、追い出力が無ければ waiting にするまでの待ち
  * - IDLE_AFTER_MS: 出力が止まってから busy を解いて idle に戻すまでの待ち
@@ -38,7 +88,10 @@ const IDLE_AFTER_MS = 800
 
 /** 端末の注意喚起シグナル。BEL と主要なデスクトップ通知系 OSC。 */
 function hasAttentionSignal(data: string): boolean {
-  if (data.includes('\x07')) return true // BEL
+  // OSC 7 の終端は BEL。cwd 報告のたびに glow すると「毎プロンプトで光る」ので先に除く。
+  // 含まないチャンク（＝ほとんど）では文字列を作り直さない。
+  const body = data.includes(OSC7_MARK) ? data.replace(OSC7_RE, '') : data
+  if (body.includes('\x07')) return true // BEL
   // OSC 9 (iTerm), OSC 777 (notify), OSC 99 (kitty) の通知
   if (data.includes('\x1b]9;')) return true
   if (data.includes('\x1b]777;notify')) return true
@@ -67,6 +120,14 @@ interface Session {
   bellPending: boolean
   idleTimer: NodeJS.Timeout | null
   bellTimer: NodeJS.Timeout | null
+  /** 検出用の末尾バッファ（生の出力。OSC 7 を含むので ANSI は落とさない）。 */
+  tail: string
+  /** 最後に通知した cwd。変化したときだけ renderer に送る。 */
+  cwd?: string
+  /** 最後に通知した再開コマンド。 */
+  resume?: string
+  /** 前回のポーリング以降に出力があったか。false のペインには lsof を撃たない。 */
+  dirty: boolean
 }
 
 type StatusListener = (id: string, status: PaneStatus) => void
@@ -80,8 +141,17 @@ export class PtyManager {
     private onExit: (id: string, exitCode: number) => void,
     private onStatus: StatusListener,
     /** 明示 cwd も継承も無いときの起動フォルダ（設定値）。未指定なら undefined を返す。 */
-    private getDefaultCwd: () => string | undefined = () => undefined
+    private getDefaultCwd: () => string | undefined = () => undefined,
+    /** シェルの cwd が変わったときだけ呼ばれる。 */
+    private onCwd: (id: string, cwd: string) => void = () => {},
+    /** 再開コマンドを新たに観測したときだけ呼ばれる。 */
+    private onResume: (id: string, resume: string) => void = () => {}
   ) {}
+
+  /** cwd ポーリングのタイマー。セッションが1つも無い間は動かさない。 */
+  private cwdTimer: NodeJS.Timeout | null = null
+  /** ポーリングの多重実行を防ぐ（lsof が詰まったときに積み上がらないように）。 */
+  private polling = false
 
   async create(opts: PtySpawnOptions): Promise<string> {
     const paneNumber = ++this.seq
@@ -132,9 +202,14 @@ export class PtyManager {
       status: 'idle',
       bellPending: false,
       idleTimer: null,
-      bellTimer: null
+      bellTimer: null,
+      tail: '',
+      // 起動直後の cwd も記憶対象。初回ポーリングで観測して通知する
+      // （ここで通知すると renderer 側の ptyId 紐付けがまだ済んでいない）。
+      dirty: true
     }
     this.sessions.set(id, session)
+    this.ensureCwdPolling()
 
     pty.onData((data) => {
       this.onData(id, data)
@@ -144,6 +219,7 @@ export class PtyManager {
     pty.onExit(({ exitCode }) => {
       this.clearTimers(session)
       this.sessions.delete(id)
+      this.stopCwdPollingIfIdle()
       this.onExit(id, exitCode)
     })
 
@@ -152,6 +228,7 @@ export class PtyManager {
 
   /** PTY 出力を受けたときの状態遷移。出力中は busy、止まれば idle。glow は BEL のみ。 */
   private handleActivity(session: Session, data: string): void {
+    this.observe(session, data)
     this.clearTimers(session)
     this.setStatus(session, 'busy')
 
@@ -209,6 +286,7 @@ export class PtyManager {
       // 既に死んでいる場合など
     }
     this.sessions.delete(id)
+    this.stopCwdPollingIfIdle()
   }
 
   killAll(): void {
@@ -235,6 +313,72 @@ export class PtyManager {
     const session = this.sessions.get(id)
     if (!session) return undefined
     return getCwdOfPid(session.pty.pid)
+  }
+
+  // ===== ペイン状態の記憶（cwd / 再開コマンド）=====
+
+  /**
+   * 出力から cwd と再開コマンドを拾う。末尾バッファ方式なのは、チャンク境界で
+   * UUID や URL が割れても取りこぼさないため。どちらも「変化したときだけ」通知する。
+   */
+  private observe(session: Session, data: string): void {
+    session.dirty = true
+    session.tail = (session.tail + data).slice(-TAIL_MAX)
+
+    // ビルドログのような大量出力でもチャンクごとに正規表現を走らせないよう、
+    // まず includes で足切りする（該当しないチャンクが圧倒的多数）。
+    // 一次：OSC 7。シェルが報告してくれるなら lsof より速く正確。
+    if (session.tail.includes(OSC7_MARK)) {
+      const osc7 = parseOsc7(session.tail)
+      if (osc7 && osc7 !== session.cwd && existsSync(osc7)) {
+        session.cwd = osc7
+        // 報告を受けた ＝ lsof で追う必要はない。
+        session.dirty = false
+        this.onCwd(session.id, osc7)
+      }
+    }
+
+    if (session.tail.includes(RESUME_MARK)) {
+      const resume = parseResume(session.tail)
+      if (resume && resume !== session.resume) {
+        session.resume = resume
+        this.onResume(session.id, resume)
+      }
+    }
+  }
+
+  private ensureCwdPolling(): void {
+    if (this.cwdTimer) return
+    this.cwdTimer = setInterval(() => void this.pollCwds(), CWD_POLL_MS)
+  }
+
+  private stopCwdPollingIfIdle(): void {
+    if (this.sessions.size > 0 || !this.cwdTimer) return
+    clearInterval(this.cwdTimer)
+    this.cwdTimer = null
+  }
+
+  /**
+   * 二次：lsof。macOS 素の zsh は OSC 7 を出さないため、こちらが本命になる人も多い。
+   * 出力のあったペインだけを引く（dirty フラグ）。暇なペインでは lsof を起動しない。
+   */
+  private async pollCwds(): Promise<void> {
+    if (this.polling) return
+    this.polling = true
+    try {
+      for (const session of [...this.sessions.values()]) {
+        if (!session.dirty) continue
+        session.dirty = false
+        const cwd = await getCwdOfPid(session.pty.pid)
+        // await の間に閉じられている可能性がある。
+        if (!cwd || !this.sessions.has(session.id)) continue
+        if (cwd === session.cwd) continue
+        session.cwd = cwd
+        this.onCwd(session.id, cwd)
+      }
+    } finally {
+      this.polling = false
+    }
   }
 
   private setStatus(session: Session, status: PaneStatus): void {

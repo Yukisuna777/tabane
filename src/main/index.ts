@@ -97,7 +97,9 @@ const ptyManager = new PtyManager(
     agentStates.forget(paneNumberOf(id))
   },
   (id, status) => send('pty:status', { id, status }),
-  () => readConfig().defaultCwd ?? undefined
+  () => readConfig().defaultCwd ?? undefined,
+  (id, cwd) => send('pty:cwd', { id, cwd }),
+  (id, resume) => send('pty:resume', { id, resume })
 )
 
 function registerIpc(): void {
@@ -540,7 +542,8 @@ function refreshMenu(): void {
     },
     currentOpacity: () => readConfig().backgroundOpacity ?? DEFAULT_OPACITY,
     onKillAllPanes: killAllPanes,
-    onInstallCli: installCli
+    onInstallCli: installCli,
+    onRedraw: () => send('menu:redraw', null)
   })
 }
 

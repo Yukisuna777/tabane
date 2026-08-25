@@ -4,8 +4,10 @@ import type {
   PaneSpawnEvent,
   PaneSyncEntry,
   PtyCreateOptions,
+  PtyCwdEvent,
   PtyDataEvent,
   PtyExitEvent,
+  PtyResumeEvent,
   PtyStatusEvent,
   SettingsPatch,
   TabaneApi
@@ -26,6 +28,8 @@ const api: TabaneApi = {
   onPtyData: (cb) => subscribe<PtyDataEvent>('pty:data', cb),
   onPtyExit: (cb) => subscribe<PtyExitEvent>('pty:exit', cb),
   onPtyStatus: (cb) => subscribe<PtyStatusEvent>('pty:status', cb),
+  onPtyCwd: (cb) => subscribe<PtyCwdEvent>('pty:cwd', cb),
+  onPtyResume: (cb) => subscribe<PtyResumeEvent>('pty:resume', cb),
   getSettings: () => ipcRenderer.invoke('settings:get'),
   onSettingsChange: (cb) => subscribe<AppSettings>('settings:changed', cb),
   updateSettings: (patch: SettingsPatch) => ipcRenderer.send('settings:update', patch),
@@ -43,7 +47,12 @@ const api: TabaneApi = {
   openExternal: (url) => ipcRenderer.send('open:external', url),
   onPaneSpawn: (cb) => subscribe<PaneSpawnEvent>('pane:spawn', cb),
   onPaneClose: (cb) => subscribe<{ ptyIds: string[] }>('pane:close', cb),
-  syncPanes: (panes: PaneSyncEntry[]) => ipcRenderer.send('pane:sync', panes)
+  syncPanes: (panes: PaneSyncEntry[]) => ipcRenderer.send('pane:sync', panes),
+  onRedraw: (cb) => {
+    const listener = (): void => cb()
+    ipcRenderer.on('menu:redraw', listener)
+    return () => ipcRenderer.removeListener('menu:redraw', listener)
+  }
 }
 
 contextBridge.exposeInMainWorld('tabane', api)

@@ -20,6 +20,8 @@ export interface TermSession {
   /** createPty の結果。再アタッチ時は resolve 済みで即発火。 */
   readyPromise: Promise<string>
   disposed: boolean
+  /** 現在ロード中の WebGL addon。コンテキスト喪失で張り替えるため保持する。 */
+  webgl: WebglAddon | null
 }
 
 const sessions = new Map<string, TermSession>()
@@ -68,6 +70,53 @@ function computeTheme(): Record<string, string> {
   return { ...base, ...ansi, background: 'rgba(0,0,0,0)' }
 }
 
+/**
+ * WebGL コンテキストの張り直し上限。これを超えたら諦めて DOM レンダラで走り続ける。
+ * GPU が本当に死んでいる環境で無限リトライして CPU を焼かないための蓋。
+ */
+const WEBGL_MAX_RETRY = 3
+/** 張り直しまでの待ち。喪失直後は GPU プロセスがまだ復帰していないことがある。 */
+const WEBGL_RELOAD_MS = 300
+
+/**
+ * WebGL レンダラを「壊れる前提」で張る。
+ *
+ * xterm.js は onContextLoss で addon を dispose() することを必須手順としている。
+ * 購読しないと、OS スリープ復帰・GPU プロセスのクラッシュ・ディスプレイ切替で
+ * コンテキストが失われたあとも死んだコンテキストに描き続け、画面がゴミのまま固定される。
+ */
+function loadWebgl(session: TermSession, attempt = 0): void {
+  if (session.disposed || attempt > WEBGL_MAX_RETRY) return
+  try {
+    const addon = new WebglAddon()
+    addon.onContextLoss(() => {
+      addon.dispose() // 死んだコンテキストに描き続けさせない
+      if (session.webgl === addon) session.webgl = null
+      window.setTimeout(() => loadWebgl(session, attempt + 1), WEBGL_RELOAD_MS)
+    })
+    session.term.loadAddon(addon)
+    session.webgl = addon
+  } catch {
+    // WebGL 不可の環境では DOM レンダラのまま走る
+  }
+}
+
+/**
+ * 全端末のグリフキャッシュ（テクスチャアトラス）を捨てて描き直す。
+ *
+ * アトラスは同一フォント設定の端末間で共有されるため、1枚壊れると全ペインが道連れになる。
+ * ＝ここを一括で捨てるのが、化けに対する唯一の効く手当て。
+ */
+export function redrawAllTerminals(): void {
+  for (const session of sessions.values()) {
+    try {
+      session.term.clearTextureAtlas()
+    } catch {
+      // DOM レンダラ時など、アトラスを持たない場合は何もしなくてよい
+    }
+  }
+}
+
 export function getSession(paneId: string): TermSession | undefined {
   return sessions.get(paneId)
 }
@@ -98,6 +147,8 @@ export function setTerminalTheme(theme: ThemeMode): void {
 }
 
 interface AttachOptions {
+  /** 前回終了時に記憶していた cwd。あればここでシェルを起こす。 */
+  cwd?: string
   inheritCwdFromPtyId?: string
   /** `tabane open` 由来のペイン。main がこの ID で cwd と起動コマンドを解決する。 */
   spawnSpecId?: string
@@ -153,7 +204,14 @@ export function attachTerminal(
   // （kitty keyboard protocol のネゴ不要なので xterm でも確実に効く）。
   // 肝は preventDefault：return false は xterm 内部処理を止めるだけで、これが無いと
   // 非表示 textarea への既定の改行(=CR)が別経路で送られ「送信」に化ける。
+  //
+  // 変換中（IME 合成中）は素通しする。xterm はカスタムキーハンドラを composition 処理より
+  // 先に呼び、false を返すとその場で打ち切る。ここで握ると未確定の日本語が確定されないまま
+  // 改行だけが PTY に飛び、確定文字が丸ごと消える（macOS の Chromium は変換中の keydown にも
+  // e.key に実キー値を入れてくるため、キー名だけでは見分けられない）。
   term.attachCustomKeyEventHandler((e) => {
+    // keyCode 229 は IME 処理中を表す古くからの合図。isComposing の取りこぼし対策に併用する。
+    if (e.isComposing || e.keyCode === 229) return true
     if (e.type === 'keydown' && e.key === 'Enter' && e.shiftKey) {
       e.preventDefault()
       const id = session.ptyId
@@ -162,11 +220,6 @@ export function attachTerminal(
     }
     return true
   })
-  try {
-    term.loadAddon(new WebglAddon())
-  } catch {
-    // WebGL 不可の環境では canvas レンダラにフォールバック
-  }
   safeFit(fit)
 
   const session: TermSession = {
@@ -176,14 +229,18 @@ export function attachTerminal(
     el,
     ptyId: null,
     disposed: false,
+    webgl: null,
     readyPromise: window.tabane.createPty({
       cols: term.cols || 80,
       rows: term.rows || 24,
+      cwd: opts.cwd,
       inheritCwdFromPtyId: opts.inheritCwdFromPtyId,
       spawnSpecId: opts.spawnSpecId
     })
   }
   sessions.set(paneId, session)
+  // session が要るので open/fit のあとに張る（喪失時に自分を張り直せるようにするため）。
+  loadWebgl(session)
 
   session.readyPromise.then((id) => {
     if (session.disposed) {
@@ -202,7 +259,20 @@ export function attachTerminal(
 /** container から外すだけ。dispose も kill もしない（再アタッチで復活する）。 */
 export function detachTerminal(paneId: string): void {
   const session = sessions.get(paneId)
-  if (session) session.el.remove()
+  if (!session) return
+  // DOM から外す前に必ず blur する。
+  //
+  // 理由1（確定文字の消失）: xterm は確定テキストを setTimeout(0) 越しに textarea から読むが、
+  // blur ハンドラは textarea を空にする。順序を握らないと「変換中に分割ボタンを押した」瞬間に
+  // 確定文字が空文字として読まれて消える。先に blur しておけば確定→送出→blur の順が保証される。
+  // 理由2（合成状態のスタック）: Chromium はフォーカス中の要素が DOM から外れても blur を
+  // 発火しないため、_isComposing が true のまま固まり以後の IME 入力を飲み込むことがある。
+  try {
+    session.term.blur()
+  } catch {
+    // 破棄済みなど。外すこと自体は続行する
+  }
+  session.el.remove()
 }
 
 /** layout に存在しない paneId のセッションを本当に破棄する（＝ペインを閉じたとき）。 */
