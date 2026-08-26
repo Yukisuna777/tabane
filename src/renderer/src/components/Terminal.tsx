@@ -4,6 +4,8 @@ import { attachTerminal, detachTerminal, getSession } from '../terminalRegistry'
 interface Props {
   paneId: string
   active: boolean
+  /** 前回終了時に記憶していた cwd。あればそこでシェルを起こす。 */
+  cwd?: string
   /** 分割元シェルの cwd を継ぐための元 PTY id（初回ペインは無し） */
   inheritCwdFromPtyId?: string
   /** `tabane open` 由来のペインなら、main が起動スペックを引くための ID */
@@ -16,6 +18,7 @@ interface Props {
 export function TerminalView({
   paneId,
   active,
+  cwd,
   inheritCwdFromPtyId,
   spawnSpecId,
   onReady,
@@ -29,7 +32,7 @@ export function TerminalView({
 
     // 永続レジストリに端末を付ける（無ければ生成、あれば DOM を移すだけ）。
     // remount で PTY/xterm は死なない ＝ 分割元シェルがリセットされない。
-    const session = attachTerminal(paneId, container, { inheritCwdFromPtyId, spawnSpecId })
+    const session = attachTerminal(paneId, container, { cwd, inheritCwdFromPtyId, spawnSpecId })
 
     let cancelled = false
     session.readyPromise.then((id) => {

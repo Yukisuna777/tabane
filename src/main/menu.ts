@@ -12,6 +12,8 @@ interface MenuCallbacks {
   onKillAllPanes: () => void
   /** tabane コマンドをパスに通す。 */
   onInstallCli: () => void
+  /** 全端末のグリフキャッシュを捨てて描き直す（文字化けの手動リセット）。 */
+  onRedraw: () => void
 }
 
 /** アプリメニューを構築。背景画像の設定項目を「表示」メニューに置く。
@@ -63,6 +65,14 @@ export function buildMenu(cb: MenuCallbacks): void {
             checked: Math.abs(cb.currentOpacity() - o) < 0.001,
             click: () => cb.onSetOpacity(o)
           }))
+        },
+        { type: 'separator' },
+        {
+          // GPU コンテキスト喪失やテクスチャアトラス破損で化けたときの手動復旧。
+          // 自動復旧（onContextLoss / 復帰時クリア）で拾えなかった場合の保険。
+          label: '画面を再描画',
+          accelerator: 'CmdOrCtrl+Shift+R',
+          click: cb.onRedraw
         },
         { type: 'separator' },
         { role: 'reload' },

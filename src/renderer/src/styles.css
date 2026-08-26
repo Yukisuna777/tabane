@@ -327,6 +327,28 @@ body.bg-image-on .title-bar {
   background: rgba(var(--overlay-rgb), 0.05);
 }
 
+/* 再開コマンドのチップ。押すと端末に入力されるだけ（実行はされない）。 */
+.resume-chip {
+  flex: 0 0 auto;
+  max-width: 96px;
+  background: rgba(var(--overlay-rgb), 0.06);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 10.5px;
+  line-height: 1;
+  padding: 3px 6px;
+  border-radius: 999px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.resume-chip:hover {
+  background: rgba(var(--overlay-rgb), 0.12);
+  color: var(--text);
+  border-color: var(--accent, var(--border));
+}
+
 .title-actions {
   display: flex;
   gap: 2px;

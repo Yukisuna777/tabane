@@ -16,6 +16,10 @@ export interface PaneNode {
    * renderer は中身を知らず持ち回るだけ。PTY 生成後は用済み。
    */
   spawnSpecId?: string
+  /** 最後に観測した cwd。次回起動時の spawn cwd に使う（volatile ではないので保存する）。 */
+  lastCwd?: string
+  /** 最後に観測した再開コマンド（例 `claude --resume <uuid>`）。提示するだけで実行はしない。 */
+  lastResume?: string
 }
 
 export interface SplitNode {
@@ -140,6 +144,25 @@ export function stripVolatile(node: LayoutNode): LayoutNode {
     return rest
   }
   return { ...node, children: node.children.map(stripVolatile) }
+}
+
+/**
+ * ペインの記憶フィールドだけを差し替える。
+ * cwd 観測は10秒おきに走りうるので、値が変わらないときは同じ木を返して再保存を避ける。
+ */
+export function updatePaneMemory(
+  node: LayoutNode,
+  paneId: string,
+  patch: Pick<PaneNode, 'lastCwd'> | Pick<PaneNode, 'lastResume'>
+): LayoutNode {
+  if (node.kind === 'pane') {
+    if (node.id !== paneId) return node
+    const key = 'lastCwd' in patch ? 'lastCwd' : 'lastResume'
+    if (node[key] === patch[key as keyof typeof patch]) return node
+    return { ...node, ...patch }
+  }
+  const children = node.children.map((c) => updatePaneMemory(c, paneId, patch))
+  return children.every((c, i) => c === node.children[i]) ? node : { ...node, children }
 }
 
 export function collectPaneIds(node: LayoutNode, acc: string[] = []): string[] {

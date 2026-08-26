@@ -11,19 +11,41 @@ import {
   setSizes,
   setTitle,
   splitPane,
-  stripVolatile
+  stripVolatile,
+  updatePaneMemory
 } from './layout'
 import { SplitView } from './components/SplitView'
 import { SettingsModal } from './components/SettingsModal'
 import {
   getSession,
   pruneTerminals,
+  redrawAllTerminals,
   setSessionReadyListener,
   setTerminalFontSize,
   setTerminalTheme
 } from './terminalRegistry'
 
 let paneCounter = 1
+
+/**
+ * 復旧トリガをまとめる間隔。focus と visibilitychange はスリープ復帰時にほぼ同時に飛ぶので、
+ * 二重にアトラスを捨てないよう短く束ねる。
+ */
+const REDRAW_COALESCE_MS = 500
+let lastRedrawAt = 0
+
+/** アトラスを捨てて描き直す（連打・同時発火はまとめる）。 */
+function redrawCoalesced(): void {
+  const now = performance.now()
+  if (now - lastRedrawAt < REDRAW_COALESCE_MS) return
+  lastRedrawAt = now
+  redrawAllTerminals()
+}
+
+/** ptyId から、その端末が載っているペインの id を引く（main は ptyId しか知らないため）。 */
+function paneIdOfPty(node: LayoutNode, ptyId: string): string | undefined {
+  return collectPanes(node).find((p) => getSession(p.id)?.ptyId === ptyId)?.id
+}
 
 /** 上バー中央のロゴ（束ねマーク）。Ice=返事待ち / Orange=通知 の2状態を象徴。 */
 function LogoMark(): JSX.Element {
@@ -131,13 +153,56 @@ export function App(): JSX.Element {
     setTerminalTheme(settings.theme)
   }, [settings.theme])
 
-  // レイアウトが定まったら先頭ペインを active に
+  // active ペインの整合を保つ。初回の割り当てに加えて、
+  // 「アクティブなペインが消えた」ときも拾う（閉じるボタン / tabane kill の両方）。
+  // 死んだ id を指したままだとフォーカスが迷子になり、どこにも入力できなくなる。
   useEffect(() => {
-    if (layout && activePaneId === null) {
-      const ids = collectPaneIds(layout)
-      if (ids.length > 0) setActivePaneId(ids[0])
-    }
+    if (!layout) return
+    const ids = collectPaneIds(layout)
+    if (ids.length === 0) return
+    if (activePaneId === null || !ids.includes(activePaneId)) setActivePaneId(ids[0])
   }, [layout, activePaneId])
+
+  // 文字化けからの自動復旧。GPU コンテキスト喪失もアトラス破損も外部要因（OS・ドライバ）で
+  // 必ず起きうるので、「化けないようにする」のではなく「化けたら必ず直る」経路を用意する。
+  // ここで拾うのは、破損が起きる瞬間そのもの（スリープ復帰・アプリ復帰・ディスプレイ切替）。
+  useEffect(() => {
+    const onFocus = (): void => redrawCoalesced()
+    const onVisibility = (): void => {
+      if (document.visibilityState === 'visible') redrawCoalesced()
+    }
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+  }, [])
+
+  // DPR の変化（外部ディスプレイへの移動）。match しなくなった時点が切替なので、
+  // 発火のたびに今の DPR で購読し直す。
+  useEffect(() => {
+    let cancelled = false
+    let mql: MediaQueryList | null = null
+    const onChange = (): void => {
+      redrawCoalesced()
+      watch()
+    }
+    const watch = (): void => {
+      if (cancelled) return
+      mql?.removeEventListener('change', onChange)
+      mql = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`)
+      mql.addEventListener('change', onChange)
+    }
+    watch()
+    return () => {
+      cancelled = true
+      mql?.removeEventListener('change', onChange)
+    }
+  }, [])
+
+  // メニュー「画面を再描画」（Cmd+Shift+R）。自動復旧で拾えなかったときの保険。
+  useEffect(() => window.tabane.onRedraw(() => redrawAllTerminals()), [])
 
   // 状態変化を一括購読して ptyId => status に集約
   useEffect(() => {
@@ -155,6 +220,32 @@ export function App(): JSX.Element {
     return () => {
       off()
       offExit()
+    }
+  }, [])
+
+  // ペインごとの記憶（cwd / 再開コマンド）を layout 木に書く。
+  //
+  // 関数形の setLayout で更新するのがミソ。cwd のポーリング通知は全ペインぶんが同じ tick に
+  // 並ぶため、ref から読んで組み立てると最後の1件以外が取りこぼされる。
+  // 保存は既存の debounce（layout 変化の 400ms 後）に任せるので、ここでは書かない。
+  useEffect(() => {
+    const remember = (
+      ptyId: string,
+      patch: { lastCwd: string } | { lastResume: string }
+    ): void => {
+      setLayout((prev) => {
+        if (!prev) return prev
+        const paneId = paneIdOfPty(prev, ptyId)
+        return paneId ? updatePaneMemory(prev, paneId, patch) : prev
+      })
+    }
+    const offCwd = window.tabane.onPtyCwd(({ id, cwd }) => remember(id, { lastCwd: cwd }))
+    const offResume = window.tabane.onPtyResume(({ id, resume }) =>
+      remember(id, { lastResume: resume })
+    )
+    return () => {
+      offCwd()
+      offResume()
     }
   }, [])
 
@@ -241,7 +332,19 @@ export function App(): JSX.Element {
     (paneId: string) => {
       const prev = layoutRef.current
       if (!prev) return
-      applyAndSave(closePane(prev, paneId) ?? createPane('shell 1'))
+      const next = closePane(prev, paneId) ?? createPane('shell 1')
+      applyAndSave(next)
+      // 閉じたのがアクティブなペインなら、隣（無ければ手前）へフォーカスを渡す。
+      // 修復 effect でも拾えるが、あちらは先頭ペインに飛ぶので体感が悪い。
+      setActivePaneId((cur) => {
+        if (cur !== paneId) return cur
+        const before = collectPaneIds(prev)
+        const alive = new Set(collectPaneIds(next))
+        const at = before.indexOf(paneId)
+        const after = before.slice(at + 1).find((id) => alive.has(id))
+        const ahead = [...before.slice(0, at)].reverse().find((id) => alive.has(id))
+        return after ?? ahead ?? null
+      })
     },
     [applyAndSave]
   )

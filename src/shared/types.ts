@@ -50,6 +50,21 @@ export interface PtyStatusEvent {
   status: PaneStatus
 }
 
+/** main -> renderer : そのペインのシェルが移動した先（OSC 7 / lsof で観測） */
+export interface PtyCwdEvent {
+  id: string
+  cwd: string
+}
+
+/**
+ * main -> renderer : PTY 出力から見つけた再開コマンド（例 `claude --resume <uuid>`）。
+ * 実行はせず、タイトルバーのチップとして提示するだけ。
+ */
+export interface PtyResumeEvent {
+  id: string
+  resume: string
+}
+
 export type ThemeMode = 'light' | 'dark'
 
 /** 背景画像の表示状態。main が画像を data URI 化して renderer に渡す。 */
@@ -122,6 +137,11 @@ export interface KillRequest {
   all?: boolean
 }
 
+/** 走っているアプリ本体の版を訊く。CLI と app は別々に更新されうるため別々に見せる。 */
+export interface VersionRequest {
+  cmd: 'version'
+}
+
 /** hooks から呼ばれる内部向け。人間・指揮役が直接使う想定はしない。 */
 export interface ReportRequest {
   cmd: 'report'
@@ -135,6 +155,7 @@ export type TabaneRequest =
   | WaitRequest
   | KillRequest
   | ReportRequest
+  | VersionRequest
 
 /** list の1行ぶん。 */
 export interface PaneInfo {
@@ -168,6 +189,10 @@ export interface TabaneApi {
   onPtyData(cb: (e: PtyDataEvent) => void): () => void
   onPtyExit(cb: (e: PtyExitEvent) => void): () => void
   onPtyStatus(cb: (e: PtyStatusEvent) => void): () => void
+  /** シェルの cwd 変化。ペインごとに記憶して次回起動の spawn cwd に使う。 */
+  onPtyCwd(cb: (e: PtyCwdEvent) => void): () => void
+  /** 再開コマンドの検出。最後に見たものだけを保持する。 */
+  onPtyResume(cb: (e: PtyResumeEvent) => void): () => void
   /** 現在の設定を取得（起動時に renderer から取りに来る） */
   getSettings(): Promise<AppSettings>
   /** メニュー/設定GUI で設定が変わったときの通知 */
@@ -193,4 +218,6 @@ export interface TabaneApi {
   onPaneClose(cb: (e: { ptyIds: string[] }) => void): () => void
   /** ペイン一覧（ptyId とタイトル）を main に同期する。tabane list が使う。 */
   syncPanes(panes: PaneSyncEntry[]): void
+  /** メニュー「画面を再描画」の合図。全端末のグリフキャッシュを捨てて描き直す。 */
+  onRedraw(cb: () => void): () => void
 }
