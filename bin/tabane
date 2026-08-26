@@ -8,8 +8,10 @@
 // 型の定義は src/shared/types.ts（このスクリプトはビルド対象外なので import はしない）。
 
 import net from 'node:net'
+import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 const USAGE = `tabane — 起動中の tabane を操作する
 
@@ -18,7 +20,41 @@ const USAGE = `tabane — 起動中の tabane を操作する
   tabane wait <pane...> [--timeout <sec>]
   tabane kill <pane...> | tabane kill --all
   tabane report --pane <n> --state running|done|needs_input   (hooks 用)
+  tabane --version
 `
+
+/**
+ * 自分（CLI）の版。同梱の package.json から読む。
+ *
+ * 通常インストールでは CLI は app バンドル内の実体へのシンボリックリンクなので、
+ * アプリを入れ替えれば CLI も一緒に入れ替わる（別々には上がらない）。
+ *
+ * 版の在り処が dev とパッケージ版で違うので順に試す。
+ *   dev:          リポジトリ直下の package.json（CLI の1つ上）
+ *   パッケージ版: app バンドルの Info.plist（Resources/bin/tabane の2つ上）
+ *
+ * パッケージ版で package.json を読まないのは、それが asar の中にあり素の Node からは
+ * 開けない（ENOTDIR）ため。かといって extraResources で外に出すと、electron-builder が
+ * それを asar から除外してしまい「Application package.json does not exist」で
+ * ビルドが落ちる。Info.plist は必ず実ファイルとして存在するので、そちらを正とする。
+ */
+function cliVersion() {
+  const here = dirname(fileURLToPath(import.meta.url))
+  try {
+    const v = JSON.parse(readFileSync(join(here, '..', 'package.json'), 'utf8')).version
+    if (v) return v
+  } catch {
+    // パッケージ版。次へ
+  }
+  try {
+    const plist = readFileSync(join(here, '..', '..', 'Info.plist'), 'utf8')
+    const m = plist.match(/<key>CFBundleShortVersionString<\/key>\s*<string>([^<]+)<\/string>/)
+    if (m) return m[1]
+  } catch {
+    // 読めなければ諦める
+  }
+  return null
+}
 
 /** userData 配下の socket。Electron の app.getPath('userData') と同じ場所を指す。 */
 function socketPath() {
@@ -200,6 +236,26 @@ async function main() {
       const res = await send({ cmd: 'kill', panes, all: !!opts.all })
       if (!res.ok) fail(res.error)
       process.stdout.write(`killed ${res.data.killed}\n`)
+      return
+    }
+
+    case 'version':
+    case '--version':
+    case '-v': {
+      const own = cliVersion()
+      process.stdout.write(`tabane ${own ?? '(版が読めない)'}\n`)
+      // 走っているアプリの版も訊く。リンク先と実際に動いているビルドが違うとき
+      // （dev と併用しているなど）だけ知りたいので、一致していれば黙る。
+      try {
+        const res = await send({ cmd: 'version' })
+        if (res.ok && res.data.version !== own) {
+          process.stdout.write(
+            `警告: 走っているアプリは ${res.data.version}（別のビルドに繋がっている）\n`
+          )
+        }
+      } catch {
+        // 起動していないだけ。CLI の版は出せているので黙る
+      }
       return
     }
 

@@ -137,6 +137,11 @@ export interface KillRequest {
   all?: boolean
 }
 
+/** 走っているアプリ本体の版を訊く。CLI と app は別々に更新されうるため別々に見せる。 */
+export interface VersionRequest {
+  cmd: 'version'
+}
+
 /** hooks から呼ばれる内部向け。人間・指揮役が直接使う想定はしない。 */
 export interface ReportRequest {
   cmd: 'report'
@@ -150,6 +155,7 @@ export type TabaneRequest =
   | WaitRequest
   | KillRequest
   | ReportRequest
+  | VersionRequest
 
 /** list の1行ぶん。 */
 export interface PaneInfo {

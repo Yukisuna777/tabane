@@ -346,6 +346,8 @@ async function handleCliRequest(req: TabaneRequest): Promise<TabaneResponse> {
       return handleKill(req)
     case 'report':
       return handleReport(req)
+    case 'version':
+      return { ok: true, data: { version: app.getVersion() } }
     default:
       return { ok: false, error: '不明なコマンド' }
   }
